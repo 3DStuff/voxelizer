@@ -1,0 +1,15 @@
+[submodule "pugixml"]
+	path = pugixml
+	url = https://github.com/zeux/pugixml.git
+[submodule "glm"]
+	path = glm
+	url = https://github.com/g-truc/glm.git
+[submodule "polyhedron"]
+	path = polyhedron
+	url = https://github.com/3DStuff/polyhedron.git
+[submodule "oqtree"]
+	path = oqtree
+	url = https://github.com/3DStuff/oqtree.git
+[submodule "examples"]
+	path = examples
+	url = https://github.com/3DStuff/examples.git
