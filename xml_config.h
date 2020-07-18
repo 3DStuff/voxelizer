@@ -1,6 +1,7 @@
 #pragma once
 
 #include "polyhedron/glm_ext/glm_extensions.h"
+#include "enums.h"
 
 #include <pugixml.hpp>
 #include <string>
@@ -22,7 +23,8 @@ namespace cfg {
     struct shape_settings {
         std::string _file_in;
         std::string _file_out;
-        int _merge_priority;
+        std::string _file_extension;
+        array_order _byte_order;
         int _material_inside;
         int _material_shell;
     };
@@ -57,10 +59,30 @@ namespace cfg {
                 for (pugi::xml_node tool : doc.child("project").children("file")) {
                     const std::string file_in = tool.attribute("file_in").as_string();
                     const std::string file_out = tool.attribute("file_out").as_string();
+                    const std::string alignment = tool.attribute("byte_order").as_string();
+
+                    array_order align = array_order::undefined;
+                    if(alignment == "row_major") {
+                        align = array_order::row_major;
+                    }
+                    else if(alignment == "column_major") {
+                        align = array_order::column_major;
+                    }
+
+                    std::string file_ext = "";
+                    const size_t pos = file_out.find_last_of(".");
+                    if(pos != std::string::npos) 
+                        file_ext = file_out.substr(pos+1);
+
+                    if(file_ext.empty()) {
+                        std::cerr << "No file extension defined for " << file_out << ". Maybe not well supported types are *.stl, *.obj, *.vox, *.raw. ";
+                        std::cerr << "There will be no export, but the rasterizer will run anyway" << std::endl;
+                    }
+
                     const int prio = tool.attribute("merge_priority").as_int();
                     const int mat_in = tool.attribute("material_interior").as_int();
                     const int mat_out = tool.attribute("material_shell").as_int();
-                    _shapes.push_back({file_in, file_out, prio, mat_in, mat_out});
+                    _shapes.push_back({file_in, file_out, file_ext, align, mat_in, mat_out});
                 }                
                 pugi::xml_node g = doc.child("project").child("grid");
                 if(!g.empty()) {

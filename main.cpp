@@ -1,6 +1,6 @@
 #include <algorithm>
 #include <iostream>
-#include "voxelizer.h"
+#include "voxelizer.hpp"
 #include "rules.h"
 #include "xml_config.h"
 
@@ -55,20 +55,14 @@ int main(int argc, char * argv[]) {
         if(mode == 1) {
             voxelize::voxelizer<rasterize::solid_fast<float>> a(p);
             a.run();
-            a.to_fs_stl<build_stl_cube>();
-            a.to_fs_vox();
         }
         if(mode == 2) {
             voxelize::voxelizer<rasterize::solid_safe<float>> b(p);
             b.run();
-            b.to_fs_stl<build_stl_cube>();
-            b.to_fs_vox();
         }
         if(mode == 3) {
             voxelize::voxelizer<rasterize::hollow<float>> c(p);
             c.run();
-            c.to_fs_stl<build_stl_cube>();
-            c.to_fs_vox();
         }
     }
 

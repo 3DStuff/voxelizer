@@ -18,5 +18,6 @@ enum swizzle_mode {
 
 enum array_order {
     row_major = 0,
-    column_major
+    column_major,
+    undefined
 };

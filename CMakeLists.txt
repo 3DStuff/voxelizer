@@ -48,7 +48,8 @@ set(voxel_lib
     polyhedron/stl/stl_import.h
     polyhedron/stl/stl_import.cpp
     oqtree/oqtree.h
-    voxelizer.h
+    voxelizer.hpp
+    voxelizer.ipp
     enums.h
     rasterizer.h
     buffer.h
@@ -57,6 +58,7 @@ set(voxel_lib
     checks.h
     xml_config.h
     vox_file.h
+    main.cpp
 )
 
 find_package(Git QUIET)

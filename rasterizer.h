@@ -17,6 +17,25 @@
 
 
 namespace rasterize {
+    template<typename voxel_buf_t, typename mesh_t>
+    struct raster_results {
+        glm::vec3 _arr_dim;
+        voxel_buf_t _voxels;
+        mesh_t _mesh;
+        
+        raster_results() = default;
+        raster_results(const glm::vec3 &dim, const voxel_buf_t &dta, const mesh_t &mesh) {
+            _arr_dim = dim;
+            _voxels = dta;
+            _mesh = mesh;
+        }
+
+        void clear() {
+            _voxels.clear();
+            _mesh.clear();
+        }
+    };
+
     //! buffer for the intersections
     //! used by rasterize::all_rle 
     //! for memory optimization
@@ -60,6 +79,12 @@ namespace rasterize {
         buf_t yz;
         //! xz plane
         buf_t xz;
+
+        void clear() {
+            yz.clear();
+            yz.clear();
+            xz.clear();
+        }
         
         uint8_t get(const int x, const int y, const int z) const {
             // check whether a position is in between intersections
@@ -116,20 +141,6 @@ namespace rasterize {
         
         proxy_i operator[] (const int x) const {
             return proxy_i(this, x);
-        }
-    };
-    
-    template<typename voxel_buf_t, typename mesh_t>
-    struct raster_results {
-        glm::vec3 _arr_dim;
-        voxel_buf_t _voxels;
-        mesh_t _mesh;
-        
-        raster_results() = default;
-        raster_results(const glm::vec3 &dim, const voxel_buf_t &dta, const mesh_t &mesh) {
-            _arr_dim = dim;
-            _voxels = dta;
-            _mesh = mesh;
         }
     };
 
