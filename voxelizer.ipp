@@ -200,7 +200,7 @@ template <typename rasterizer_t> void voxelizer<rasterizer_t>::to_fs_vox(const v
 }
 
 template <typename rasterizer_t> void voxelizer<rasterizer_t>::to_fs(const voxel_data_t &mdata) const {
-    to_fs_obj(mdata);
+    to_fs_obj<build_stl_cube>(mdata);
     to_fs_stl<build_stl_cube>(mdata);
     to_fs_vox(mdata);
     to_fs_bytes(mdata);

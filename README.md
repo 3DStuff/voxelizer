@@ -1,14 +1,35 @@
 # A batch voxelizer
-This program can be used to convert meshes into hexaeder meshes (*.stl, *.obj), *.vox (if size is withing 127 voxel boundary), and 8 bit binary byte files. 
-The rasterizer is parallelized and generally very fast. <code>--fast</code> in single thread mode is comparable with ([VoxSurf](https://github.com/sylefeb/VoxSurf)).
+This project started as a funny playground for testing some c++20 compiler features (such as static checks for speed up). 
+Now it can be used to convert meshes into solid or hollow hexahedron meshes: (*.stl), or voxel files: *.vox (if size is within the 127 voxel boundary), 8 bit binary (*.raw). 
 
-| Complete                                                                             | Detail                                                                         |
-|--------------------------------------------------------------------------------------|--------------------------------------------------------------------------------|
-| ![file](https://github.com/3DStuff/ressources/blob/master/eiffel_hex_mesh_compl.png) | ![file](https://github.com/3DStuff/ressources/blob/master/eiffel_hex_mesh.png) |
+There are three rasterizer implementations which are parallelized and probably (among?) the fastest CPU rasterizers around. 
+<code>--safe</code> has additional checks for e.g. edge collisions, is optimized for a lower memory footprint (uses projections, quad trees) 
+and continues where most other voxelizers stop because of memory issues and is a nice trade-off regarding performance. 
+<code>--fast</code> is optimzed for pure speed and yields a solid voxel model (shell and interior can be assigned)
+<code>--hollow</code> is very fast, relatively memory efficient and yields a voxel shell.
+
+| Eiffel tower input mesh                                                        | Output hexahedron mesh                                                         |
+|--------------------------------------------------------------------------------|--------------------------------------------------------------------------------|
+| ![file](https://github.com/3DStuff/ressources/blob/master/eiffel_mesh.png)     | ![file](https://github.com/3DStuff/ressources/blob/master/eiffel_hex_mesh.png) |
+
+# performance
+
+Performance: i7 4770k (4 physical cores) based on the stanford bunny (112k faces).
+
+<img src="https://github.com/3DStuff/ressources/blob/master/stanford_1024.png" alt="stanford bunny" width="256"/><br>Mesh was rasterized with ~1024³ voxels.
+
+| Volume	| --safe (ms)	| --fast (ms)	| --hollow (ms) 	|
+|-------	|--------	    |--------	    |----------	|
+| 64³   	| 118    	    | 59     	    | 43       	|
+| 128³  	| 298    	    | 71     	    | 58       	|
+| 256³  	| 1089   	    | 134    	    | 122      	|
+| 512³  	| 4483   	    | 409       	| 398      	|
+| 1024³ 	| 17933  	    | 2918      	| 1956     	|
+| 2048³ 	| 76225  	    | 28509     	| 11794    	|
 
 # Project configuration
 
-A project comprehends how the mesh will be rasterized. 
+A project is based on a *.xml file which comprehends how the mesh will be rasterized. 
 
 ```
 <project>
@@ -31,7 +52,7 @@ Here we define that along any axis the voxel number cannot exceed 256.
 ```
 
 Now we define the input files and the output files.
-The voxelizer supports currently (not much tested) *.stl (hex mesh), *.obj (hex mesh), *raw (plain binary), *.vox ([Magica](https://voxel-magic.com/)) files. 
+The voxelizer supports currently (not much tested) *.stl (hex mesh), *.obj (hex mesh, _not yet finished_), *.raw (plain binary), *.vox ([Magica](https://voxel-magic.com/)) files. 
 
 ```
     <target
