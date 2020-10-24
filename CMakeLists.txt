@@ -1,30 +1,6 @@
 cmake_minimum_required(VERSION 3.5)
 project(VoxelMagick LANGUAGES CXX)
 
-# Copy single files
-macro(copy_ressource src trg)
-    foreach(file ${src})
-        message(STATUS "Copying resource ${file}")
-        file(COPY ${file} DESTINATION ${trg})
-    endforeach()
-endmacro()
-
-# Copy full directories
-macro(copy_ressource src trg)
-    foreach(dir ${src})
-        # Replace / at the end of the path (copy dir content VS copy dir)
-        string(REGEX REPLACE "/+$" "" dirclean "${dir}")
-        message(STATUS "Copying resource ${dirclean}")
-        file(COPY ${dirclean} DESTINATION ${trg})
-    endforeach()
-endmacro()
-
-# copy ressources right into the build directory for playing
-copy_ressource(examples/david ".")
-copy_ressource(examples/cube ".")
-copy_ressource(examples/eiffel ".")
-copy_ressource(examples/ensemble ".")
-
 find_package( OpenCV REQUIRED )
 find_package(OpenMP)
 
@@ -83,10 +59,33 @@ endif()
 add_subdirectory(pugixml)
 link_directories(pugixml)
 
-
 add_executable(VoxelMagick main.cpp ${voxel_lib})
 if(OpenMP_CXX_FOUND)
     target_link_libraries(VoxelMagick pugixml OpenMP::OpenMP_CXX ${OpenCV_LIBS})
 else()
     target_link_libraries(VoxelMagick pugixml ${OpenCV_LIBS})
 endif()
+
+# Copy single files
+macro(copy_ressource src trg)
+    foreach(file ${src})
+        message(STATUS "Copying resource ${file}")
+        file(COPY ${file} DESTINATION ${trg})
+    endforeach()
+endmacro()
+
+# Copy full directories
+macro(copy_ressource src trg)
+    foreach(dir ${src})
+        # Replace / at the end of the path (copy dir content VS copy dir)
+        string(REGEX REPLACE "/+$" "" dirclean "${dir}")
+        message(STATUS "Copying resource ${dirclean}")
+        file(COPY ${dirclean} DESTINATION ${trg})
+    endforeach()
+endmacro()
+
+# copy ressources right into the build directory for playing
+copy_ressource(examples/david ".")
+copy_ressource(examples/cube ".")
+copy_ressource(examples/eiffel ".")
+copy_ressource(examples/ensemble ".")

@@ -7,9 +7,12 @@
 [submodule "polyhedron"]
 	path = polyhedron
 	url = https://github.com/3DStuff/polyhedron.git
+	branch = master
 [submodule "oqtree"]
 	path = oqtree
 	url = https://github.com/3DStuff/oqtree.git
+	branch = master
 [submodule "examples"]
 	path = examples
-	url = https://github.com/3DStuff/examples
+	url = https://github.com/3DStuff/examples.git
+	branch = master
