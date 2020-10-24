@@ -51,7 +51,11 @@ set(voxel_lib
     voxelizer.hpp
     voxelizer.ipp
     enums.h
-    rasterizer.h
+    rasterizer_fast.h
+    rasterizer_hollow.h
+    rasterizer_safe.h
+    raster_results.h
+    index_buffer.h
     buffer.h
     timer.h
     rules.h

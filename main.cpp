@@ -1,8 +1,8 @@
-#include <algorithm>
-#include <iostream>
-#include "voxelizer.hpp"
+#include "rasterizer_safe.h"
+#include "rasterizer_hollow.h"
+#include "rasterizer_fast.h"
 #include "rules.h"
-#include "xml_config.h"
+#include "voxelizer.hpp"
 
 
 char* getCmdOption(char ** begin, char ** end, const std::string & option) {

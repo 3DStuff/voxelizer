@@ -2,7 +2,6 @@
 
 #include "polyhedron/glm_ext/glm_extensions.h"
 #include "polyhedron/stl/stl_import.h"
-#include "polyhedron/mesh/polyhedron.h"
 
 #include <tuple>
 #include <vector>

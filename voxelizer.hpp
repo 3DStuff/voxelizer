@@ -1,27 +1,11 @@
 #pragma once
 
 #include "polyhedron/glm_ext/glm_extensions.h"
-#include "polyhedron/mesh/polyhedron.h"
 #include "polyhedron/stl/stl_import.h"
+#include "polyhedron/mesh/polyhedron.h"
 
-#include "oqtree/oqtree.h"
-
-#include "checks.h"
-#include "xml_config.h"
-#include "rules.h"
-#include "buffer.h"
-#include "timer.h"
-#include "enums.h"
-#include "rasterizer.h"
-#include "vox_file.h"
-
-#include <string>
-#include <set>
-#include <map>
 #include <vector>
-#include <tuple>
 #include <filesystem>
-#include <fstream>
 
 
 namespace voxelize {

@@ -1,12 +1,8 @@
 #pragma once
 
-#include "polyhedron/mesh/polyhedron.h"
 #include "polyhedron/glm_ext/glm_extensions.h"
 
-#include <glm/glm.hpp>
-#include <iostream>
 #include "xml_config.h"
-#include "buffer.h"
 #include "enums.h"
 
 
@@ -383,16 +379,16 @@ namespace checks {
             return false;
         }
 
-        inline bool allGreaterThan(const std::array<float, 3> &v, const float c) {
+        inline bool allGreaterEqualThan(const std::array<float, 3> &v, const float c) {
             for(auto &p : v) {
-                if(p < c) return false;
+                if(p <= c) return false;
             }
             return true;
         }
 
-        inline bool allSmallerThan(const std::array<float, 3> &v, const float c) {
+        inline bool allSmallerEqualThan(const std::array<float, 3> &v, const float c) {
             for(auto &p : v) {
-                if(p > c) return false;
+                if(p >= c) return false;
             }
             return true;
         }
@@ -445,14 +441,14 @@ namespace checks {
             if(axis_test_z12(e2, voxel_center, face, half_box_size)) return false;
 
             const auto max = voxel_center + half_box_size;
-            if(allGreaterThan({face[0].x, face[1].x, face[2].x}, max.x)) return false;
-            if(allGreaterThan({face[0].y, face[1].y, face[2].y}, max.y)) return false;
-            if(allGreaterThan({face[0].z, face[1].z, face[2].z}, max.z)) return false;
+            if(allGreaterEqualThan({face[0].x, face[1].x, face[2].x}, max.x)) return false;
+            if(allGreaterEqualThan({face[0].y, face[1].y, face[2].y}, max.y)) return false;
+            if(allGreaterEqualThan({face[0].z, face[1].z, face[2].z}, max.z)) return false;
 
             const auto min = voxel_center - half_box_size;
-            if(allSmallerThan({face[0].x, face[1].x, face[2].x}, min.x)) return false;
-            if(allSmallerThan({face[0].y, face[1].y, face[2].y}, min.y)) return false;
-            if(allSmallerThan({face[0].z, face[1].z, face[2].z}, min.z)) return false;
+            if(allSmallerEqualThan({face[0].x, face[1].x, face[2].x}, min.x)) return false;
+            if(allSmallerEqualThan({face[0].y, face[1].y, face[2].y}, min.y)) return false;
+            if(allSmallerEqualThan({face[0].z, face[1].z, face[2].z}, min.z)) return false;
 
             return true;
         }

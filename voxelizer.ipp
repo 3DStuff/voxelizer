@@ -1,3 +1,9 @@
+#include "xml_config.h"
+#include "vox_file.h"
+
+#include <fstream>
+
+
 template <typename rasterizer_t> std::filesystem::path voxelizer<rasterizer_t>::make_fname(const voxel_data_t &d) const {
     return  std::filesystem::path(_project_cfg.target_dir()) / (d.cfg._file_out);
 }
