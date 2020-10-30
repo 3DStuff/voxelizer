@@ -1,7 +1,8 @@
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.9)
 project(VoxelMagick LANGUAGES CXX)
 
-find_package( OpenCV REQUIRED )
+#find_package(OpenCV)
+find_package(GTest)
 find_package(OpenMP)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -11,6 +12,13 @@ find_program(CCACHE_PROGRAM ccache)
 if(CCACHE_PROGRAM)
     set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE "${CCACHE_PROGRAM}")
 endif()
+
+set(pugixml_lib
+    pugixml/src/pugixml.cpp
+    pugixml/src/pugixml.hpp
+    pugixml/src/pugiconfig.hpp
+)
+add_library(pugixml STATIC ${pugixml_lib})
 
 include_directories(
     glm
@@ -24,6 +32,8 @@ set(voxel_lib
     polyhedron/stl/stl_import.h
     polyhedron/stl/stl_import.cpp
     oqtree/oqtree.h
+    rle/rle.h
+    rle/rle_io.h
     voxelizer.hpp
     voxelizer.ipp
     enums.h
@@ -38,6 +48,7 @@ set(voxel_lib
     checks.h
     xml_config.h
     vox_file.h
+    merger.h
     main.cpp
 )
 
@@ -56,14 +67,12 @@ if(GIT_FOUND AND EXISTS "${PROJECT_SOURCE_DIR}/.git")
     endif()
 endif()
 
-add_subdirectory(pugixml)
-link_directories(pugixml)
-
 add_executable(VoxelMagick main.cpp ${voxel_lib})
-if(OpenMP_CXX_FOUND)
-    target_link_libraries(VoxelMagick pugixml OpenMP::OpenMP_CXX ${OpenCV_LIBS})
-else()
-    target_link_libraries(VoxelMagick pugixml ${OpenCV_LIBS})
+#target_link_libraries(VoxelMagick pugixml ${OpenCV_LIBS}) 
+target_link_libraries(VoxelMagick pugixml) 
+if(TARGET OpenMP::OpenMP_CXX)
+    message(STATUS "OpenMP::OpenMP_CXX: " ${OpenMP_CXX_FLAGS})
+    target_link_libraries(VoxelMagick ${OpenMP_CXX_FLAGS}) 
 endif()
 
 # Copy single files
@@ -89,3 +98,15 @@ copy_ressource(examples/david ".")
 copy_ressource(examples/cube ".")
 copy_ressource(examples/eiffel ".")
 copy_ressource(examples/ensemble ".")
+
+if(GTEST_FOUND)
+    message(STATUS "Google test found")
+    ################################
+    # Unit Tests
+    ################################
+    # Add test cpp file
+    add_executable( runUnitTests rle/test_rle.cpp )
+    # Link test executable against gtest & gtest_main
+    target_link_libraries(runUnitTests gtest gtest_main)
+    add_test( runUnitTests runUnitTests )
+endif()

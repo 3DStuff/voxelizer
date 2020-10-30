@@ -16,3 +16,7 @@
 	path = examples
 	url = https://github.com/3DStuff/examples.git
 	branch = master
+[submodule "rle"]
+	path = rle
+	url = https://github.com/3DStuff/rle.git
+	branch = master

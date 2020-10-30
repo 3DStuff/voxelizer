@@ -1,9 +1,3 @@
-#include "xml_config.h"
-#include "vox_file.h"
-
-#include <fstream>
-
-
 template <typename rasterizer_t> std::filesystem::path voxelizer<rasterizer_t>::make_fname(const voxel_data_t &d) const {
     return  std::filesystem::path(_project_cfg.target_dir()) / (d.cfg._file_out);
 }
@@ -55,28 +49,37 @@ void voxelizer<rasterizer_t>::to_fs_stl(const voxel_data_t &mdata) const {
     // write a zero in the face count first as a placeholder
     uint32_t faces = 0;
     stl::format::append(stlf, faces);
-        
+
+    constexpr size_t faces_per_cube = 12;
+    using cube_t = std::array<stl::face, faces_per_cube>;
+    std::map<stl::face, size_t> write_buf;
+
+    std::cout << "Generate Mesh and find duplicate faces" << std::endl;
     // now write faces of hull cubes into stl
-    for(int x = 0; x < (int)mdata.data._arr_dim.x; x++) {
-        constexpr size_t faces_per_cube = 12;
-        using cube_t = std::array<stl::face, faces_per_cube>;
-        std::vector<std::array<stl::face, faces_per_cube>> write_buf;
-        
-        // reduce number of file operations by writing in larger blocks
-#pragma omp parallel for
-        for(int y = 0; y < (int)mdata.data._arr_dim.y; y++)
-        for(int z = 0; z < (int)mdata.data._arr_dim.z; z++) {
-            if(mdata.data._voxels[x][y][z] != voxel_type::shell) continue;
-#pragma omp critical 
-{
-            cube_t arr = rule_t::mesh(glm::vec3(x,y,z)*_voxel_size+offset, glm::vec3(_voxel_size));
-            write_buf.push_back(arr);
-            faces += faces_per_cube;
-}
+    for(int x = 0; x < (int)mdata.data._arr_dim.x; x++)
+    for(int y = 0; y < (int)mdata.data._arr_dim.y; y++)
+    for(int z = 0; z < (int)mdata.data._arr_dim.z; z++) {
+        if(mdata.data._voxels[x][y][z] != voxel_type::shell) continue;
+        cube_t arr = rule_t::mesh(glm::vec3(x,y,z)*_voxel_size+offset, glm::vec3(_voxel_size));
+        for(auto &f : arr) {
+            write_buf[f]++;
         }
-        stl::format::append(stlf, write_buf, write_buf.size() * sizeof(cube_t));
     }
-    
+
+    std::cout << "Write Mesh" << std::endl;
+    benchmark::timer tw("voxelizer::to_stl() - " + p.string() + " write took");
+    faces = 0;
+    for(auto &pair : write_buf) {
+        auto &face = pair.first;
+        auto &num = pair.second;
+        // duplicate faces are always inside, 
+        // because cubes touch each other
+        // skip them! 
+        if(num > 1) continue;
+
+        stl::format::append(stlf, face, sizeof(stl::face));
+        faces++;
+    }
     stl::format::close(stlf);
     
     // replace face count

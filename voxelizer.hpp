@@ -3,8 +3,13 @@
 #include "polyhedron/glm_ext/glm_extensions.h"
 #include "polyhedron/stl/stl_import.h"
 #include "polyhedron/mesh/polyhedron.h"
+#include "xml_config.h"
+#include "vox_file.h"
+#include "rle/rle_io.h"
 
+#include <fstream>
 #include <vector>
+#include <map>
 #include <filesystem>
 
 

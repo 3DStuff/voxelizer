@@ -10,6 +10,7 @@
 #include "timer.h"
 
 #include <set>
+#include <omp.h>
 
 
 namespace rasterize {

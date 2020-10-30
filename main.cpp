@@ -4,6 +4,8 @@
 #include "rules.h"
 #include "voxelizer.hpp"
 
+#include <omp.h>
+
 
 char* getCmdOption(char ** begin, char ** end, const std::string & option) {
     if (auto itr = std::find(begin, end, option); itr != end && ++itr != end) {
@@ -27,6 +29,12 @@ void show_help() {
 }
 
 int main(int argc, char * argv[]) {
+#ifdef _OPENMP
+    size_t num_threads = omp_get_max_threads();
+    std::cout << "omp_get_num_threads(): " << num_threads << std::endl;
+    omp_set_num_threads(num_threads);
+#endif
+
     int mode = 2;
     std::string dir = ".";
     

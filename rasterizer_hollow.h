@@ -8,6 +8,8 @@
 #include "buffer.h"
 #include "timer.h"
 
+#include <omp.h>
+
 
 namespace rasterize {
     //! generates a voxel mesh from an arbitrary polyhedron
