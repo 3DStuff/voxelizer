@@ -5,16 +5,92 @@ template <typename rasterizer_t> std::filesystem::path voxelizer<rasterizer_t>::
 template <typename rasterizer_t> 
 template<typename rule_t> 
 void voxelizer<rasterizer_t>::to_fs_obj(const voxel_data_t &mdata) const {
-    if(mdata.cfg._file_extension != "obj") return;
+    if(mdata.cfg._file_ext_out != "obj") return;
+
+    const glm::vec3 proj_dim = (_prj_bbox._max - _prj_bbox._min);
+    const float scalef = _max_grid_size / glm::compMax(proj_dim);  
+
+    bool voxel_size_defined = false;
+    if(_project_cfg.voxel_size_defined()) {
+        voxel_size_defined = true;
+    }
+    else if(_project_cfg.grid_size_defined()) {
+        voxel_size_defined = false;
+    }
+    else {
+        std::cerr << "Neither grid nor voxel size was defined. Break export." << std::endl;
+        return;
+    }
 
     const std::filesystem::path p = make_fname(mdata);
-    mdata.mesh.to_obj(p.string());
+    benchmark::timer t("voxelizer::to_obj() - " + p.string() + " export took");
+                    
+    glm::vec3 offset;
+    if(voxel_size_defined) {
+        offset = glm::round(mdata.bbox._min * scalef) * _voxel_size;
+    }
+    else {
+        offset = glm::round((mdata.bbox._min - _prj_bbox._min) * scalef) * _voxel_size;
+    }
+    
+
+    // write a zero in the face count first as a placeholder
+    std::cout << "Generate Mesh and find duplicate faces" << std::endl;
+
+    // now write faces of hull cubes into stl
+    std::map<stl::face, size_t> face_buf;
+    for(int x = 0; x < (int)mdata.data._arr_dim.x; x++)
+    for(int y = 0; y < (int)mdata.data._arr_dim.y; y++)
+    for(int z = 0; z < (int)mdata.data._arr_dim.z; z++) {
+        if(mdata.data._voxels[x][y][z] != voxel_type::shell) continue;
+        constexpr size_t faces_per_cube = 12;
+        using cube_t = std::array<stl::face, faces_per_cube>;
+        cube_t arr = rule_t::mesh(glm::vec3(x,y,z)*_voxel_size+offset, glm::vec3(_voxel_size));
+        for(auto &f : arr) {
+            face_buf[f]++;
+        }
+    }
+    // delete unnecessary faces
+    auto itr = face_buf.begin();
+    while(itr != face_buf.end()) {
+        if(itr->second > 1) {
+            itr = face_buf.erase(itr);
+            continue;
+        } 
+        itr++;
+    }
+
+    // put vertices into a hash table
+    mesh::polyhedron<float> mesh;
+    auto &vertex_arr =  mesh._vertices;
+
+    int i = 0;
+    for(const auto &f : face_buf) {
+        vertex_arr.push_back(f.first._vert_1);
+        vertex_arr.push_back(f.first._vert_2);
+        vertex_arr.push_back(f.first._vert_3);
+
+        const uint32_t id_v1 = i*3+0;
+        const uint32_t id_v2 = i*3+1;
+        const uint32_t id_v3 = i*3+2;
+        
+        mesh._indices.add(mesh::face(id_v1, id_v2, id_v3));
+
+        mesh._edges[mesh::edge(id_v1, id_v2)] += 1;
+        mesh._edges[mesh::edge(id_v2, id_v3)] += 1;
+        mesh._edges[mesh::edge(id_v3, id_v1)] += 1;
+        
+        i++;
+    }
+
+    obj::format f;
+    f.save({mesh}, p.string());
 }
 
 template <typename rasterizer_t>
 template <typename rule_t>
 void voxelizer<rasterizer_t>::to_fs_stl(const voxel_data_t &mdata) const {
-    if(mdata.cfg._file_extension != "stl") return;
+    if(mdata.cfg._file_ext_out != "stl") return;
 
     const glm::vec3 proj_dim = (_prj_bbox._max - _prj_bbox._min);
     const float scalef = _max_grid_size / glm::compMax(proj_dim);  
@@ -50,16 +126,15 @@ void voxelizer<rasterizer_t>::to_fs_stl(const voxel_data_t &mdata) const {
     uint32_t faces = 0;
     stl::format::append(stlf, faces);
 
-    constexpr size_t faces_per_cube = 12;
-    using cube_t = std::array<stl::face, faces_per_cube>;
-    std::map<stl::face, size_t> write_buf;
-
     std::cout << "Generate Mesh and find duplicate faces" << std::endl;
     // now write faces of hull cubes into stl
+    std::map<stl::face, size_t> write_buf;
     for(int x = 0; x < (int)mdata.data._arr_dim.x; x++)
     for(int y = 0; y < (int)mdata.data._arr_dim.y; y++)
     for(int z = 0; z < (int)mdata.data._arr_dim.z; z++) {
         if(mdata.data._voxels[x][y][z] != voxel_type::shell) continue;
+        constexpr size_t faces_per_cube = 12;
+        using cube_t = std::array<stl::face, faces_per_cube>;
         cube_t arr = rule_t::mesh(glm::vec3(x,y,z)*_voxel_size+offset, glm::vec3(_voxel_size));
         for(auto &f : arr) {
             write_buf[f]++;
@@ -153,7 +228,7 @@ template <typename rasterizer_t> std::vector<uint8_t> voxelizer<rasterizer_t>::t
 }
 
 template <typename rasterizer_t> void voxelizer<rasterizer_t>::to_fs_bytes(const voxel_data_t &mdata) const {
-    if(mdata.cfg._file_extension != "raw") return;
+    if(mdata.cfg._file_ext_out != "raw") return;
 
     const std::filesystem::path p = make_fname(mdata);
     benchmark::timer t("voxelizer::to_fs_bytes() - " + p.string() + " export took");
@@ -175,7 +250,7 @@ template <typename rasterizer_t> void voxelizer<rasterizer_t>::to_fs_bytes(const
 }
 
 template <typename rasterizer_t> void voxelizer<rasterizer_t>::to_fs_vox(const voxel_data_t &mdata) const {
-    if(mdata.cfg._file_extension != "vox") return;
+    if(mdata.cfg._file_ext_out != "vox") return;
 
     const std::filesystem::path p = make_fname(mdata);
     const auto &vox_size = mdata.data._arr_dim;
@@ -219,7 +294,9 @@ template <typename rasterizer_t> voxelizer<rasterizer_t>::voxelizer(const cfg::x
     _project_cfg = cfg;
     
     // calc the meshes and the project bbox
-    project_bbox();
+    if(!load()) {
+        exit(0);
+    }
     
     if(_project_cfg.grid_size_defined()) {
         _max_grid_size = _project_cfg.max_grid_size();
@@ -238,17 +315,29 @@ template <typename rasterizer_t> void voxelizer<rasterizer_t>::clear() {
 
 //! calculates the project bbox
 //! buffers the meshes after creation
-template <typename rasterizer_t> void voxelizer<rasterizer_t>::project_bbox() {
+template <typename rasterizer_t> bool voxelizer<rasterizer_t>::load() {
     const std::filesystem::path path = _project_cfg.project_path();
     
     glm::vec3 glob_min(FLT_MAX);
     glm::vec3 glob_max(-FLT_MAX);
     for(const cfg::shape_settings &shape : _project_cfg.shapes()) {
         const std::filesystem::path file = path / shape._file_in;
-        const stl::format stl(file.string());
-        
-        mesh::polyhedron<float> p_flt = stl.to_polyhedron(stl.faces());
-        const stl::bbox<float> bbox = p_flt.bounding_box();
+        mesh::polyhedron<float> p_flt;
+
+        if(shape._file_ext_inp == "stl") {
+            stl::format stl(file.string());
+            p_flt = stl.to_polyhedron(stl.faces());
+        }
+        else if(shape._file_ext_inp == "obj") {
+            obj::format obj(file.string());
+            p_flt = obj.to_polyhedron();
+        }
+        else {
+            std::cerr << "load(): File format not supported" << std::endl;
+            return false;
+        }
+
+        const mesh::bbox<float> bbox = p_flt.bounding_box();
         
         glob_min = glm::min(glob_min, bbox._min);
         glob_max = glm::max(glob_max, bbox._max);
@@ -256,6 +345,7 @@ template <typename rasterizer_t> void voxelizer<rasterizer_t>::project_bbox() {
         _rasterizer_res.push_back({p_flt, shape, bbox});
     }
     _prj_bbox = { glob_min, glob_max };
+    return true;
 }
 
 template <typename rasterizer_t> void voxelizer<rasterizer_t>::run() {

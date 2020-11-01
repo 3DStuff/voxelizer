@@ -1,7 +1,7 @@
 #pragma once
 
 #include "polyhedron/glm_ext/glm_extensions.h"
-#include "polyhedron/stl/stl_import.h"
+#include "polyhedron/io/stl/stl_import.h"
 
 #include <tuple>
 #include <vector>

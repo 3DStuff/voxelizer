@@ -1,8 +1,10 @@
 #pragma once
 
 #include "polyhedron/glm_ext/glm_extensions.h"
-#include "polyhedron/stl/stl_import.h"
+#include "polyhedron/io/stl/stl_import.h"
+#include "polyhedron/io/obj/obj_import.h"
 #include "polyhedron/mesh/polyhedron.h"
+#include "polyhedron/mesh/bbox.h"
 #include "xml_config.h"
 #include "vox_file.h"
 #include "rle/rle_io.h"
@@ -21,7 +23,7 @@ namespace voxelize {
         struct voxel_data_t {
             mesh::polyhedron<float> mesh;
             cfg::shape_settings cfg;
-            stl::bbox<float> bbox;
+            mesh::bbox<float> bbox;
             typename rasterizer_t::voxel_data_t data;
 
             //! clear mesh and rasterization data
@@ -32,14 +34,14 @@ namespace voxelize {
         };
         std::vector<voxel_data_t> _rasterizer_res;
         
-        stl::bbox<float> _prj_bbox;
+        mesh::bbox<float> _prj_bbox;
         float _max_grid_size = 0;
         float _voxel_size = 0;
         
     private:
         //! calculates the project bbox
         //! buffers the meshes after creation
-        void project_bbox();
+        bool load();
         std::filesystem::path make_fname(const voxel_data_t &d) const;
         
     public:

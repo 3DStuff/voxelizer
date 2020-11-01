@@ -23,7 +23,8 @@ namespace cfg {
     struct shape_settings {
         std::string _file_in;
         std::string _file_out;
-        std::string _file_extension;
+        std::string _file_ext_inp;
+        std::string _file_ext_out;
         array_order _byte_order;
         int _material_inside;
         int _material_shell;
@@ -69,12 +70,17 @@ namespace cfg {
                         align = array_order::column_major;
                     }
 
-                    std::string file_ext = "";
-                    const size_t pos = file_out.find_last_of(".");
-                    if(pos != std::string::npos) 
-                        file_ext = file_out.substr(pos+1);
+                    std::string file_ext_in = "";
+                    const size_t pos_in = file_in.find_last_of(".");
+                    if(pos_in != std::string::npos) 
+                        file_ext_in = file_in.substr(pos_in+1);
 
-                    if(file_ext.empty()) {
+                    std::string file_ext_out = "";
+                    const size_t pos_out = file_out.find_last_of(".");
+                    if(pos_out != std::string::npos) 
+                        file_ext_out = file_out.substr(pos_out+1);
+
+                    if(file_ext_out.empty()) {
                         std::cerr << "No file extension defined for " << file_out << ". Maybe not well supported types are *.stl, *.obj, *.vox, *.raw. ";
                         std::cerr << "There will be no export, but the rasterizer will run anyway" << std::endl;
                     }
@@ -82,7 +88,7 @@ namespace cfg {
                     const int prio = tool.attribute("merge_priority").as_int();
                     const int mat_in = tool.attribute("material_interior").as_int();
                     const int mat_out = tool.attribute("material_shell").as_int();
-                    _shapes.push_back({file_in, file_out, file_ext, align, mat_in, mat_out});
+                    _shapes.push_back({file_in, file_out, file_ext_in, file_ext_out, align, mat_in, mat_out});
                 }                
                 pugi::xml_node g = doc.child("project").child("grid");
                 if(!g.empty()) {
