@@ -32,7 +32,8 @@ namespace rasterize {
         using voxel_data_t = raster_results<buffer3d<uint8_t>, mesh::polyhedron<base_t>>;
         
         solid_fast(const mesh::polyhedron<base_t> &poly, glm::ivec3 dim) {
-            _polyhedron = prepare_index_buffers(poly, dim, _xy_plane_buffer, _yz_plane_buffer, _xz_plane_buffer);
+            double min_face_area = poly.avg_face_area() / 10;
+            _polyhedron = prepare_index_buffers(poly, dim, _xy_plane_buffer, _yz_plane_buffer, _xz_plane_buffer, min_face_area);
             _dim = glm::ceil(_polyhedron.dim());
         }
         
