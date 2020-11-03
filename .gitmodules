@@ -4,10 +4,6 @@
 [submodule "glm"]
 	path = glm
 	url = https://github.com/g-truc/glm.git
-[submodule "polyhedron"]
-	path = polyhedron
-	url = https://github.com/3DStuff/polyhedron.git
-	branch = master
 [submodule "oqtree"]
 	path = oqtree
 	url = https://github.com/3DStuff/oqtree.git
@@ -19,4 +15,8 @@
 [submodule "rle"]
 	path = rle
 	url = https://github.com/3DStuff/rle.git
+	branch = master
+[submodule "polyhedron"]
+	path = polyhedron
+	url = https://github.com/3DStuff/polyhedron.git
 	branch = master

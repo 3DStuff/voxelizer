@@ -52,7 +52,6 @@ set(voxel_lib
     checks.h
     xml_config.h
     vox_file.h
-    merger.h
     main.cpp
 )
 

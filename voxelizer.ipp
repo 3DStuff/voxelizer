@@ -33,58 +33,75 @@ void voxelizer<rasterizer_t>::to_fs_obj(const voxel_data_t &mdata) const {
         offset = glm::round((mdata.bbox._min - _prj_bbox._min) * scalef) * _voxel_size;
     }
     
-
     // write a zero in the face count first as a placeholder
     std::cout << "Generate Mesh and find duplicate faces" << std::endl;
-
     // now write faces of hull cubes into stl
-    std::map<stl::face, size_t> face_buf;
+    std::map<stl::face, size_t> cont_buf;
+    std::map<stl::face, size_t> shell_buf;
+
     for(int x = 0; x < (int)mdata.data._arr_dim.x; x++)
     for(int y = 0; y < (int)mdata.data._arr_dim.y; y++)
     for(int z = 0; z < (int)mdata.data._arr_dim.z; z++) {
-        if(mdata.data._voxels[x][y][z] != voxel_type::shell) continue;
         constexpr size_t faces_per_cube = 12;
         using cube_t = std::array<stl::face, faces_per_cube>;
-        cube_t arr = rule_t::mesh(glm::vec3(x,y,z)*_voxel_size+offset, glm::vec3(_voxel_size));
-        for(auto &f : arr) {
-            face_buf[f]++;
+        if(mdata.data._voxels[x][y][z] == voxel_type::shell) {
+            cube_t arr = rule_t::mesh(glm::vec3(x,y,z)*_voxel_size+offset, glm::vec3(_voxel_size));
+            for(auto &f : arr) {
+                shell_buf[f]++;
+            }
+        }
+        if(mdata.data._voxels[x][y][z] == voxel_type::interior) {
+            cube_t arr = rule_t::mesh(glm::vec3(x,y,z)*_voxel_size+offset, glm::vec3(_voxel_size));
+            for(auto &f : arr) {
+                cont_buf[f]++;
+            }
         }
     }
-    // delete unnecessary faces
-    auto itr = face_buf.begin();
-    while(itr != face_buf.end()) {
-        if(itr->second > 1) {
-            itr = face_buf.erase(itr);
-            continue;
-        } 
-        itr++;
+
+    // delete duplicate faces
+    auto rem_duplicates = [](auto &inout_buf) {
+        auto itr = inout_buf.begin();
+        while(itr != inout_buf.end()) {
+            if(itr->second > 1) {
+                itr = inout_buf.erase(itr);
+                continue;
+            } 
+            itr++;
+        }
+    };
+    // build new cube meshes
+    auto build_mesh = [](const std::string &in_name, const auto &in_buf, auto &inout_mesh) {
+        inout_mesh._name = in_name;
+        uint32_t i = 0;
+        for(const auto &f : in_buf) {
+            inout_mesh._vertices.push_back(f.first._vert_1);
+            inout_mesh._vertices.push_back(f.first._vert_2);
+            inout_mesh._vertices.push_back(f.first._vert_3);
+            inout_mesh._indices.add(mesh::face(i*3+0, i*3+1, i*3+2));        
+            i++;
+        }
+        inout_mesh.compress();
+    };
+
+    mesh::polyhedron<float> shell_mesh;
+    mesh::polyhedron<float> cont_mesh;
+#pragma omp parallel    // parallel region
+#pragma omp single      // one thread per task
+{
+    #pragma omp task
+    {
+    rem_duplicates(shell_buf);
+    build_mesh("shell", shell_buf, shell_mesh);
     }
 
-    // put vertices into a hash table
-    mesh::polyhedron<float> mesh;
-    auto &vertex_arr =  mesh._vertices;
-
-    int i = 0;
-    for(const auto &f : face_buf) {
-        vertex_arr.push_back(f.first._vert_1);
-        vertex_arr.push_back(f.first._vert_2);
-        vertex_arr.push_back(f.first._vert_3);
-
-        const uint32_t id_v1 = i*3+0;
-        const uint32_t id_v2 = i*3+1;
-        const uint32_t id_v3 = i*3+2;
-        
-        mesh._indices.add(mesh::face(id_v1, id_v2, id_v3));
-
-        mesh._edges[mesh::edge(id_v1, id_v2)] += 1;
-        mesh._edges[mesh::edge(id_v2, id_v3)] += 1;
-        mesh._edges[mesh::edge(id_v3, id_v1)] += 1;
-        
-        i++;
+    #pragma omp task
+    {
+    rem_duplicates(cont_buf);
+    build_mesh("interior", cont_buf, cont_mesh);
     }
-
+}
     obj::format f;
-    f.save({mesh}, p.string());
+    f.save({shell_mesh, cont_mesh}, p.string());
 }
 
 template <typename rasterizer_t>

@@ -1,3 +1,7 @@
+# Added 03112020:
+* Hex mesh: removal of invisible faces 
+* Wavefront (*.obj) import/export 
+
 # A batch voxelizer
 This project started as a funny playground for testing some c++20 compiler features (such as static checks for speed up). 
 Now it can be used to convert meshes into solid or hollow hexahedron meshes: (*.stl), or voxel files: *.vox (if size is within the 127 voxel boundary), 8 bit binary (*.raw). 
@@ -12,9 +16,9 @@ and continues where most other voxelizers stop because of memory issues and is a
 |--------------------------------------------------------------------------------|--------------------------------------------------------------------------------|
 | ![file](https://github.com/3DStuff/ressources/blob/master/eiffel_mesh.png)     | ![file](https://github.com/3DStuff/ressources/blob/master/eiffel_hex_mesh.png) |
 
-# performance
+# Performance
 
-Performance: i7 4770k (4 physical cores) based on the stanford bunny (112k faces).
+Rasterization performance: i7 4770k (4 physical cores) based on the stanford bunny (112k faces).
 
 <img src="https://github.com/3DStuff/ressources/blob/master/stanford_1024.png" alt="stanford bunny" width="256"/><br>Mesh was rasterized with ~1024³ voxels.
 
@@ -26,6 +30,23 @@ Performance: i7 4770k (4 physical cores) based on the stanford bunny (112k faces
 | 512³  	| 4483   	    | 409       	| 398      	|
 | 1024³ 	| 17933  	    | 2918      	| 1956     	|
 | 2048³ 	| 76225  	    | 28509     	| 11794    	|
+
+# Output
+
+The voxelizer supports currently import of .stl (hex mesh) or .obj files.
+Models can be exported as hexahedral mesh (.stl, .obj) 
+or as .vox ([Magica](https://voxel-magic.com/)), .raw file. 
+
+* .stl: An outer surface mesh of the voxel model is generated
+
+* .obj: The output mesh _may_ consist of two groups (shell and interior) if the rasterizer type supports it.
+
+* .raw: The voxels are exported byte-wise. Each byte is equal to the definition in the *.xml file (material_interior, material_shell).
+
+## Mesh simplification
+
+Duplicate vertices and interior faces are removed (as far as possible dependent on the export format).
+Currently, I work on merging of co-planar faces.  
 
 # Project configuration
 
@@ -52,7 +73,6 @@ Here we define that along any axis the voxel number cannot exceed 256.
 ```
 
 Now we define the input files and the output files.
-The voxelizer supports currently (not much tested) *.stl (hex mesh), *.obj (hex mesh, _not yet finished_), *.raw (plain binary), *.vox ([Magica](https://voxel-magic.com/)) files. 
 
 ```
     <target
