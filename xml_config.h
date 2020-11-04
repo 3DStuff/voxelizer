@@ -28,6 +28,7 @@ namespace cfg {
         array_order _byte_order;
         int _material_inside;
         int _material_shell;
+        float _voxel_size;
     };
 
     //! project settings
@@ -56,7 +57,23 @@ namespace cfg {
             
             pugi::xml_document doc;
             pugi::xml_parse_result result = doc.load_file(xml.c_str());
-            if (result) {
+            if (result) {            
+                pugi::xml_node g = doc.child("project").child("grid");
+                if(!g.empty()) {
+                    _grid_size_defined = true;
+                    _grid_size = g.attribute("max_voxels").as_int();
+                }
+                pugi::xml_node r = doc.child("project").child("voxel_size");
+                if(!r.empty()) {
+                    _voxel_size_defined = true;
+                    _voxel_size = r.attribute("cube_size").as_float();
+                }                
+                pugi::xml_node t = doc.child("project").child("target");
+                if(!t.empty()) {
+                    _target_dir = t.attribute("dir_out").as_string();
+                    _raw_fname = t.attribute("raw_fname").as_string();
+                }
+
                 for (pugi::xml_node tool : doc.child("project").children("file")) {
                     const std::string file_in = tool.attribute("file_in").as_string();
                     const std::string file_out = tool.attribute("file_out").as_string();
@@ -68,6 +85,9 @@ namespace cfg {
                     }
                     else if(alignment == "column_major") {
                         align = array_order::column_major;
+                    }
+                    else {
+                        align = array_order::row_major;
                     }
 
                     std::string file_ext_in = "";
@@ -88,25 +108,9 @@ namespace cfg {
                     const int prio = tool.attribute("merge_priority").as_int();
                     const int mat_in = tool.attribute("material_interior").as_int();
                     const int mat_out = tool.attribute("material_shell").as_int();
-                    _shapes.push_back({file_in, file_out, file_ext_in, file_ext_out, align, mat_in, mat_out});
-                }                
-                pugi::xml_node g = doc.child("project").child("grid");
-                if(!g.empty()) {
-                    _grid_size_defined = true;
-                    _grid_size = g.attribute("max_voxels").as_int();
-                    _voxel_size = g.attribute("stl_cube_size").as_float();
-                }
-                pugi::xml_node r = doc.child("project").child("voxel_size");
-                if(!r.empty()) {
-                    _voxel_size_defined = true;
-                    _voxel_size = r.attribute("cube_size").as_float();
-                }                
-                pugi::xml_node t = doc.child("project").child("target");
-                if(!t.empty()) {
-                    _target_dir = t.attribute("dir_out").as_string();
-                    _raw_fname = t.attribute("raw_fname").as_string();
-                }
-                
+                    _shapes.push_back({file_in, file_out, file_ext_in, file_ext_out, align, mat_in, mat_out, _voxel_size});
+                }    
+
                 // error cases
                 if(_shapes.empty()) {
                     std::cerr << "No *.stl files defined" << std::endl;

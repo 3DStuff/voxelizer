@@ -16,48 +16,44 @@
 
 
 namespace voxelize {
+    struct project_cfg {
+        cfg::shape_settings xml;
+        mesh::polyhedron<float> mesh;
+        mesh::bbox<float> loc_bbox;
+        mesh::bbox<float> glo_bbox;
+
+        //! clear mesh and rasterization data
+        void clear() {
+            mesh.clear();
+        }
+    };
+
     template <typename rasterizer_t>
     class voxelizer {
-        cfg::xml_project _project_cfg;
-        
-        struct voxel_data_t {
-            mesh::polyhedron<float> mesh;
-            cfg::shape_settings cfg;
-            mesh::bbox<float> bbox;
-            typename rasterizer_t::voxel_data_t data;
+        using raster_out_t = typename rasterizer_t::voxel_data_t;
 
-            //! clear mesh and rasterization data
-            void clear() {
-                mesh.clear();
-                data.clear();
-            }
-        };
-        std::vector<voxel_data_t> _rasterizer_res;
-        
-        mesh::bbox<float> _prj_bbox;
-        float _max_grid_size = 0;
-        float _voxel_size = 0;
+        cfg::xml_project _project_cfg;
+        std::vector<project_cfg> _rasterizer_res;
         
     private:
         //! calculates the project bbox
         //! buffers the meshes after creation
         bool load();
-        std::filesystem::path make_fname(const voxel_data_t &d) const;
         
     public:
         voxelizer(const cfg::xml_project &cfg);
-        std::vector<uint8_t> to_bytes(const voxel_data_t &in_mdata, glm::ivec3 &out_proj_voxels) const;
+        std::vector<uint8_t> to_bytes(const project_cfg &, const raster_out_t &) const;
         void clear();
         void run();
 
         // TODO not implemented yet
-        template<typename rule_t> void to_fs_obj(const voxel_data_t &mdata) const;
-        template<typename rule_t> void to_fs_stl(const voxel_data_t &mdata) const;
+        template<typename rule_t> void to_fs_obj(const project_cfg &, const raster_out_t &) const;
+        template<typename rule_t> void to_fs_stl(const project_cfg &, const raster_out_t &) const;
+        void to_fs_bytes(const project_cfg &, const raster_out_t &) const;
+        void to_fs_rle(const project_cfg &, const raster_out_t &) const;
+        void to_fs_vox(const project_cfg &, const raster_out_t &) const;
 
-        void to_fs_bytes(const voxel_data_t &mdata) const;
-        void to_fs_vox(const voxel_data_t &mdata) const;
-
-        void to_fs(const voxel_data_t &mdata) const;
+        void to_fs(const project_cfg &, const raster_out_t &) const;
     };
 
     #include "voxelizer.ipp"
