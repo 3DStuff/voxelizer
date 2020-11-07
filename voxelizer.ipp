@@ -240,7 +240,7 @@ template <typename rasterizer_t>
 void voxelizer<rasterizer_t>::to_fs_bytes(const project_cfg &cfg, const raster_out_t &raster_out) const {
     if(cfg.xml._file_ext_out != "raw") return;
 
-    const std::filesystem::path p = make_fname(_project_cfg, cfg);
+    std::filesystem::path p = make_fname(_project_cfg, cfg);
     benchmark::timer t("voxelizer::to_fs_bytes() - " + p.string() + " export took");
 
     // we write in small chunks and never create a huge array
@@ -268,10 +268,10 @@ void voxelizer<rasterizer_t>::to_fs_bytes(const project_cfg &cfg, const raster_o
     }
     f.close();
 
-    const std::filesystem::path p_size_info =  p.string() + ".size_info.txt";
-    std::ofstream f_size_info(p_size_info, std::ofstream::out);
-    const glm::vec3 prj_dim = glm::ceil(cfg.glo_bbox.dim());
-    f_size_info << "[xyz]: " << prj_dim.x << " " << prj_dim.y << " " << prj_dim.z << "\n";
+    // generate a text file whichs stores some additional info about the file
+    p.replace_extension("info"); // replace file extension with info
+    std::ofstream f_size_info(p.string(), std::ofstream::out);
+    f_size_info << "[xyz]: " << dim_glo.x << " " << dim_glo.y << " " << dim_glo.z << "\n";
     const std::string byte_order = cfg.xml._byte_order == array_order::row_major ? "row major" : "column major";
     f_size_info << "[byte order]: " << byte_order << "\n";
     f_size_info << "[interior voxel value]: " << cfg.xml._material_inside << "\n";
