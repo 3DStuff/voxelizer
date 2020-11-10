@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.9)
+cmake_minimum_required(VERSION 3.12)
 project(VoxelMagick LANGUAGES CXX)
 
 #find_package(OpenCV)
@@ -7,6 +7,9 @@ find_package(OpenMP)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+#set(CMAKE_CXX_FLAGS "-O2 -g -fopenmp")
+#set(CMAKE_CXX_FLAGS "-O0 -g")
 
 find_program(CCACHE_PROGRAM ccache)
 if(CCACHE_PROGRAM)
@@ -52,6 +55,7 @@ set(voxel_lib
     checks.h
     xml_config.h
     vox_file.h
+    merge.h
     main.cpp
 )
 

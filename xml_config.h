@@ -10,6 +10,7 @@
 #include <vector>
 #include <regex>
 #include <set>
+#include <iostream>
 
 
 namespace cfg {
@@ -19,12 +20,18 @@ namespace cfg {
         }   
     }
     
+    struct merge_target {
+        std::string _file_out;                  // without ext
+        std::string _type;
+        std::set<std::string> _file_ext_out;
+    };
+
     //! shape settings
     struct shape_settings {
         std::string _file_in;
-        std::string _file_out;
+        std::string _file_out;                  // without ext
         std::string _file_ext_inp;
-        std::string _file_ext_out;
+        std::set<std::string> _file_ext_out;
         array_order _byte_order;
         int _material_inside;
         int _material_shell;
@@ -35,6 +42,7 @@ namespace cfg {
     class xml_project {
         std::string                 _project_file;
         std::vector<shape_settings> _shapes;
+        std::vector<merge_target>   _merge_targets;
         
         int                         _grid_size;     // maximum number of voxels (either along: w, h, d)
         float                       _voxel_size;    // alternatively use voxel size
@@ -47,11 +55,17 @@ namespace cfg {
         bool                        _grid_size_defined = false;
 
         xml_project read_project(const std::string &xml) {
+            auto split = [](const std::string in, const std::string &sep) {
+                std::regex regex{"([" + sep + "]+)"};
+                std::sregex_token_iterator it{in.begin(), in.end(), regex, -1};
+                return std::set<std::string>() = {it, {}};
+            };
+
             if(xml.empty()) {
                 std::cerr << "*.xml file undefined" << std::endl;
                 return {};
             }
-            
+        
             _project_file = xml;
             xml_project proj = *this;
             
@@ -74,10 +88,25 @@ namespace cfg {
                     _raw_fname = t.attribute("raw_fname").as_string();
                 }
 
+                for (pugi::xml_node tool : doc.child("project").children("merge")) {
+                    std::string file_out = tool.attribute("file_out").as_string();
+                    std::string type = tool.attribute("type").as_string();
+
+                    std::string ext = "";
+                    const size_t pos_out = file_out.find_last_of(".");
+                    if(pos_out != std::string::npos) 
+                        ext = file_out.substr(pos_out+1);
+
+                    file_out = std::regex_replace(file_out, std::regex(ext), "");
+                    std::set<std::string> file_ext_out = split(ext, "|");
+
+                    _merge_targets.push_back({file_out, type, file_ext_out});
+                }
+
                 for (pugi::xml_node tool : doc.child("project").children("file")) {
-                    const std::string file_in = tool.attribute("file_in").as_string();
-                    const std::string file_out = tool.attribute("file_out").as_string();
-                    const std::string alignment = tool.attribute("byte_order").as_string();
+                    std::string file_in = tool.attribute("file_in").as_string();
+                    std::string file_out = tool.attribute("file_out").as_string();
+                    std::string alignment = tool.attribute("byte_order").as_string();
 
                     array_order align = array_order::undefined;
                     if(alignment == "row_major") {
@@ -95,10 +124,14 @@ namespace cfg {
                     if(pos_in != std::string::npos) 
                         file_ext_in = file_in.substr(pos_in+1);
 
-                    std::string file_ext_out = "";
+                    std::string ext = "";
                     const size_t pos_out = file_out.find_last_of(".");
                     if(pos_out != std::string::npos) 
-                        file_ext_out = file_out.substr(pos_out+1);
+                        ext = file_out.substr(pos_out+1);
+
+                    auto start_ext = file_out.find(ext);
+                    file_out.erase(start_ext, ext.size());
+                    std::set<std::string> file_ext_out = split(ext, "|");
 
                     if(file_ext_out.empty()) {
                         std::cerr << "No file extension defined for " << file_out << ". Maybe not well supported types are *.stl, *.obj, *.vox, *.raw. ";
@@ -149,6 +182,9 @@ namespace cfg {
         }
         const std::vector<shape_settings> &shapes() const {
             return _shapes;
+        }
+        const std::vector<merge_target> &merge_targets() const {
+            return _merge_targets;
         }
         const std::string target_dir() const {
             return _target_dir;

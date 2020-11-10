@@ -8,6 +8,8 @@
 #include "xml_config.h"
 #include "vox_file.h"
 #include "rle/rle_io.h"
+#include "merge.h"
+#include "timer.h"
 
 #include <fstream>
 #include <vector>
@@ -34,7 +36,8 @@ namespace voxelize {
 
         cfg::xml_project _project_cfg;
         std::vector<project_cfg> _rasterizer_res;
-        
+        mesh::bbox<float> _glob_bbox;
+
     private:
         //! calculates the project bbox
         //! buffers the meshes after creation

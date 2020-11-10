@@ -23,8 +23,8 @@ namespace {
         return id;
     }
 
-    inline std::filesystem::path make_fname(const cfg::xml_project &prj, const project_cfg &cfg) {
-        return  std::filesystem::path(prj.target_dir()) / (cfg.xml._file_out);
+    inline std::filesystem::path make_fname(const cfg::xml_project &prj, const project_cfg &cfg, const std::string &ext) {
+        return  std::filesystem::path(prj.target_dir()) / (cfg.xml._file_out+ext);
     }
 
     template <typename project_cfg, typename raster_out_t>
@@ -98,18 +98,17 @@ namespace {
 template <typename rasterizer_t> 
 template<typename rule_t> 
 void voxelizer<rasterizer_t>::to_fs_obj(const project_cfg &cfg, const raster_out_t &raster_out) const {
-    if(cfg.xml._file_ext_out != "obj") return;
-    const std::filesystem::path p = make_fname(_project_cfg, cfg);
+    if(!cfg.xml._file_ext_out.count("obj")) return;
+    const std::filesystem::path p = make_fname(_project_cfg, cfg, "obj"); 
     benchmark::timer t("voxelizer::to_obj() - " + p.string() + " export took");
-                    
-    const glm::vec3 offset = glm::round(cfg.loc_bbox._min - cfg.glo_bbox._min);
-    
+                   
     // write a zero in the face count first as a placeholder
     std::cout << "Generate Mesh and find duplicate faces" << std::endl;
     // now write faces of hull cubes into stl
     std::map<stl::face, size_t> cont_buf;
     std::map<stl::face, size_t> shell_buf;
 
+    const glm::vec3 offset = glm::round(cfg.loc_bbox._min - cfg.glo_bbox._min);
     for(int x = 0; x < (int)raster_out._arr_dim.x; x++)
     for(int y = 0; y < (int)raster_out._arr_dim.y; y++)
     for(int z = 0; z < (int)raster_out._arr_dim.z; z++) {
@@ -178,11 +177,10 @@ void voxelizer<rasterizer_t>::to_fs_obj(const project_cfg &cfg, const raster_out
 template <typename rasterizer_t>
 template <typename rule_t>
 void voxelizer<rasterizer_t>::to_fs_stl(const project_cfg &cfg, const raster_out_t &raster_out) const {
-    if(cfg.xml._file_ext_out != "stl") return;
-    const std::filesystem::path p = make_fname(_project_cfg, cfg);
+    if(!cfg.xml._file_ext_out.count("stl")) return;
+
+    const std::filesystem::path p = make_fname(_project_cfg, cfg, "stl");  
     benchmark::timer t("voxelizer::to_stl() - " + p.string() + " export took");
-                   
-    const glm::vec3 offset = glm::round(cfg.loc_bbox._min - cfg.glo_bbox._min);
 
     auto stlf = stl::format::open(p.string());
     for(int i = 0; i < 80; i++)
@@ -194,6 +192,7 @@ void voxelizer<rasterizer_t>::to_fs_stl(const project_cfg &cfg, const raster_out
 
     std::cout << "Generate Mesh and find duplicate faces" << std::endl;
     // now write faces of hull cubes into stl
+    const glm::vec3 offset = glm::round(cfg.loc_bbox._min - cfg.glo_bbox._min);
     std::map<stl::face, size_t> write_buf;
     for(int x = 0; x < (int)raster_out._arr_dim.x; x++)
     for(int y = 0; y < (int)raster_out._arr_dim.y; y++)
@@ -238,9 +237,8 @@ std::vector<uint8_t> voxelizer<rasterizer_t>::to_bytes(const project_cfg &cfg, c
 
 template <typename rasterizer_t> 
 void voxelizer<rasterizer_t>::to_fs_bytes(const project_cfg &cfg, const raster_out_t &raster_out) const {
-    if(cfg.xml._file_ext_out != "raw") return;
-
-    std::filesystem::path p = make_fname(_project_cfg, cfg);
+    if(!cfg.xml._file_ext_out.count("raw")) return;
+    std::filesystem::path p = make_fname(_project_cfg, cfg, "raw");
     benchmark::timer t("voxelizer::to_fs_bytes() - " + p.string() + " export took");
 
     // we write in small chunks and never create a huge array
@@ -281,9 +279,8 @@ void voxelizer<rasterizer_t>::to_fs_bytes(const project_cfg &cfg, const raster_o
 
 template <typename rasterizer_t> 
 void voxelizer<rasterizer_t>::to_fs_rle(const project_cfg &cfg, const raster_out_t &raster_out) const {
-    if(cfg.xml._file_ext_out != "rle") return;
-
-    const std::filesystem::path p = make_fname(_project_cfg, cfg);
+    if(!cfg.xml._file_ext_out.count("rle")) return;
+    const std::filesystem::path p = make_fname(_project_cfg, cfg, "rle");
     benchmark::timer t("voxelizer::to_fs_rle() - " + p.string() + " export took");
 
     // we write in small chunks and never create a huge array
@@ -299,23 +296,23 @@ void voxelizer<rasterizer_t>::to_fs_rle(const project_cfg &cfg, const raster_out
     for(size_t x = 0; x < (size_t)dim_glo.x; x++) {
         const glm::ivec3 pos_vox = glm::ivec3(x,y,z) - ofs;
         if(glm::any(glm::lessThan(pos_vox, glm::ivec3(0))) || glm::any(glm::greaterThanEqual(pos_vox, dim_loc))) {
-            rle.add((uint8_t)0);
+            rle << (uint8_t)0;
             continue;
         }
         const uint8_t mat = byte.get_voxel(pos_vox);
-        rle.add(mat);
+        rle << mat;
     }
 
-    const std::vector<size_t> meta = { (size_t)dim_glo.x, (size_t)dim_glo.y, (size_t)dim_glo.z };
+    const std::vector<size_t> meta = { (size_t)dim_glo.x, (size_t)dim_glo.y, (size_t)dim_glo.z, (size_t)cfg.xml._byte_order};
     compress::rle_io rle_io(rle, meta);
     rle_io.to_file(p.string());
 }
 
 template <typename rasterizer_t> 
 void voxelizer<rasterizer_t>::to_fs_vox(const project_cfg &cfg, const raster_out_t &raster_out) const {
-    if(cfg.xml._file_ext_out != "vox") return;
+    if(!cfg.xml._file_ext_out.count("vox")) return;
 
-    const std::filesystem::path p = make_fname(_project_cfg, cfg);
+    const std::filesystem::path p = make_fname(_project_cfg, cfg, "vox");
     const auto &vox_size = raster_out._arr_dim;
     
     vox::chunk::MAIN chunk_main;                
@@ -375,7 +372,7 @@ template <typename rasterizer_t>
 bool voxelizer<rasterizer_t>::load() {
     const std::filesystem::path path = _project_cfg.project_path();
     
-    mesh::bbox<float> glob_bbox;
+    _glob_bbox = mesh::bbox<float>();
     for(const cfg::shape_settings &cfg : _project_cfg.shapes()) {
         const std::filesystem::path file = path / cfg._file_in;
         mesh::polyhedron<float> mesh;
@@ -397,18 +394,18 @@ bool voxelizer<rasterizer_t>::load() {
         _rasterizer_res.push_back({cfg, mesh, local_bbox});
 
         // calculate the gloabel project bounding box on the fly
-        glob_bbox.extend(local_bbox);
+        _glob_bbox.extend(local_bbox);
     }
 
     // update global bounding box in the config containers
     for(auto &cfg : _rasterizer_res) {
-        cfg.glo_bbox = glob_bbox;
+        cfg.glo_bbox = _glob_bbox;
     }
     // update voxel size in the config containers if not defined
     if(_project_cfg.grid_size_defined()) {
         float max_grid_size = _project_cfg.max_grid_size();
         for(auto &cfg : _rasterizer_res) {
-            cfg.xml._voxel_size = glm::compMax(glm::ceil(glob_bbox.dim())) / max_grid_size;
+            cfg.xml._voxel_size = glm::compMax(glm::ceil(_glob_bbox.dim())) / max_grid_size;
         }
     }
     return true;
@@ -420,7 +417,7 @@ void voxelizer<rasterizer_t>::run() {
         std::cerr << "Neither maximum grid size, nor voxel size defined in *.xml file" << std::endl;
         return;
     }
-    
+
     for(project_cfg &cfg : _rasterizer_res) {
         // calculate uniorm scale factor (+/- 1 voxel)
         // keeping the size ratio of each voxel model in the project constant to each other
@@ -435,4 +432,7 @@ void voxelizer<rasterizer_t>::run() {
         // release data
         cfg.clear();
     }
+
+    rle_merge<uint8_t> merger(_project_cfg, _glob_bbox);
+    merger.run();
 }
