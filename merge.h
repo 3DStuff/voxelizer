@@ -17,17 +17,14 @@
 
 
 namespace {
-    auto flatten_3dindex = [](const glm::ivec3 &dim, const glm::ivec3 &pos, const array_order order) {
-        int64_t id = -1;
-        if (order == array_order::row_major) {
-            id = (int64_t)pos.z * dim.x*dim.y + pos.y * dim.x + pos.x;
-        }
-        else if (order == array_order::column_major) {
-            id = (int64_t)pos.x * dim.y*dim.z + pos.y * dim.z + pos.z;
-        }
-        assert(id >= 0 && "Index is invalid");
-        return id;
-    };
+    inline void write_info(std::string file, const glm::ivec3 &dim_glo, int byte_order) {
+        // generate a text file whichs stores some additional info about the file
+        std::ofstream f_size_info(file, std::ofstream::out);
+        f_size_info << "[xyz]: " << dim_glo.x << " " << dim_glo.y << " " << dim_glo.z << "\n";
+        const std::string s_byte_order = byte_order == array_order::row_major ? "row major" : "column major";
+        f_size_info << "[byte order]: " << s_byte_order << "\n";
+        f_size_info.close();
+    }
 };
 
 namespace voxelize {
@@ -162,6 +159,9 @@ namespace voxelize {
                 std::ofstream fout(raw_outf, std::ofstream::binary);
                 fout.write((char*)&glo_buf[0], glo_buf.size());
                 fout.close();
+                // generate info file
+                std::string raw_infof = std::filesystem::path(_project_dir) / (target._file_out + "info");
+                write_info(raw_infof, {meta[0], meta[1], meta[2]}, meta[3]);
             }
             return true;
         }
@@ -207,6 +207,10 @@ namespace voxelize {
                 std::ofstream fout(raw_outf, std::ofstream::binary);
                 fout.write((char*)&glo_buf[0], glo_buf.size());
                 fout.close();
+                // generate info file
+                std::string raw_infof = std::filesystem::path(_project_dir) / (target._file_out + "info");
+                const glm::ivec3 dim = {meta_first->at(0), meta_first->at(1), meta_first->at(2)};
+                write_info(raw_infof, dim, meta_first->at(3));
             }
             return true;
         }
@@ -249,6 +253,10 @@ namespace voxelize {
                 std::vector<uint8_t> buf = rle_out.decode();
                 f.write((char*)&buf[0], buf.size());
                 f.close();
+                // generate info file
+                std::string raw_infof = std::filesystem::path(_project_dir) / (target._file_out + "info");
+                const glm::ivec3 dim = {meta_first->at(0), meta_first->at(1), meta_first->at(2)};
+                write_info(raw_infof, dim, meta_first->at(3));
             }
             return true;
         }

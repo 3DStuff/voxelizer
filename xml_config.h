@@ -97,7 +97,8 @@ namespace cfg {
                     if(pos_out != std::string::npos) 
                         ext = file_out.substr(pos_out+1);
 
-                    file_out = std::regex_replace(file_out, std::regex(ext), "");
+                    auto start_ext = file_out.find(ext);
+                    file_out.erase(start_ext, ext.size());
                     std::set<std::string> file_ext_out = split(ext, "|");
 
                     _merge_targets.push_back({file_out, type, file_ext_out});
