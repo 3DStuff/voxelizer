@@ -90,18 +90,18 @@ namespace voxelize {
                 }
 
                 if(target._type == "fast") {
-                    run_fast_raw(target);
-                    //run_fast_rle(target);
+                    if(run_fast_raw(target)) continue;
+                    if(run_fast_rle(target)) continue;
                 }
                 if(target._type == "efficient") {
-                    run_efficient_rle(target);
+                    if(run_efficient_rle(target)) continue;
                 }
             }
         }
 
     protected:
-        void run_fast_raw(const cfg::merge_target &target) {
-            if(_raw.size() < 2) return;
+        bool run_fast_raw(const cfg::merge_target &target) {
+            if(_raw.size() < 2) return false;
             benchmark::timer t("run_fast_raw::run() - merge took");
 
             // get meta
@@ -110,7 +110,6 @@ namespace voxelize {
             const std::vector<size_t> meta = { (size_t)dim.x, (size_t)dim.y, (size_t)dim.z, (size_t)shape._byte_order };
 
             auto check_buf = [&](const std::vector<uint8_t> &buf){
-                std::cout << buf.size() <<"; " << dim.x <<";"<< dim.y<<";" << dim.z << std::endl;
                 assert(buf.size() % dim.x == 0 && "");
                 assert(buf.size() % dim.y == 0 && "");
                 assert(buf.size() % dim.z == 0 && "");
@@ -126,25 +125,29 @@ namespace voxelize {
             f.close();
             check_buf(glo_buf);
 
-            for(int i = 1; i < _raw.size(); i++) {
-                std::cout << "progress: " << (int)((float)i/_raw.size()*100) << "/" << 100 << std::endl;
+            int perc = 0;
+            size_t prog = 0;
+#pragma omp parallel for
+            for(size_t fid = 1; fid < _raw.size(); fid++) {
+                const int cur_perc = (int)((float)prog/_raw.size()*100);
+                if(perc != cur_perc) {
+                    perc = cur_perc;
+#pragma omp critical
+                    std::cout << "progress: " << (int)((float)prog/_raw.size()*100) << "/" << 100 << std::endl;
+                }
+#pragma omp atomic
+                prog++;
 
                 std::vector<uint8_t> loc_buf;
-                f = std::ifstream(_raw[i], std::ofstream::binary);
-                std::copy(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>(), std::back_inserter(loc_buf));
-                f.close();
+                std::ifstream f_in = std::ifstream(_raw[fid], std::ofstream::binary);
+                std::copy(std::istreambuf_iterator<char>(f_in), std::istreambuf_iterator<char>(), std::back_inserter(loc_buf));
+                f_in.close();
                 check_buf(loc_buf);
 
-#pragma omp parallel for
-                for(int j = 0; j < loc_buf.size(); j++) {
-                    if(loc_buf[j] == 0) {
-                        continue;
-                    }
-                    if(glo_buf[j] == 0) {
-                        glo_buf[j] = loc_buf[j];
-                        continue;
-                    }
-                    glo_buf[j] = glo_buf[j] > loc_buf[j] ? loc_buf[j] : glo_buf[j];
+                for(int id = 0; id < loc_buf.size(); id++) {
+                    if(loc_buf[id] == 0) continue;
+#pragma omp critical
+                    glo_buf[id] = glo_buf[id] < loc_buf[id] ? loc_buf[id] : glo_buf[id];
                 }
             }
 
@@ -156,53 +159,83 @@ namespace voxelize {
             }
             if(target._file_ext_out.count("raw")) {
                 std::string raw_outf = std::filesystem::path(_project_dir) / (target._file_out + "raw");
-                std::ofstream f(raw_outf, std::ofstream::binary);
-                f.write((char*)&glo_buf[0], glo_buf.size());
-                f.close();
+                std::ofstream fout(raw_outf, std::ofstream::binary);
+                fout.write((char*)&glo_buf[0], glo_buf.size());
+                fout.close();
             }
+            return true;
         }
 
-        void run_efficient_rle(const cfg::merge_target &target) const {
-            if(_rle.size() < 2) return;
+        bool run_fast_rle(const cfg::merge_target &target) {
+            if(_rle.size() < 2) return false;
+            benchmark::timer t("run_fast_rle::run() - merge took");
+
+            const auto meta_first = _meta.begin();
+            const uint64_t num_voxels = (uint64_t)meta_first->at(0) * meta_first->at(1) * meta_first->at(2);
+            std::vector<uint8_t> glo_buf(num_voxels, 0);
+
+            int perc = 0;
+            uint64_t prog = 0;
+#pragma omp parallel for
+            for(size_t fid = 0; fid < _rle.size(); fid++) {
+                const int cur_perc = (int)((float)prog/_rle.size()*100);
+                if(perc != cur_perc) {
+                    perc = cur_perc;
+#pragma omp critical
+                    std::cout << "progress: " << perc << "/" << 100 << std::endl;
+                }
+#pragma omp atomic
+                prog++;
+
+                const compress::rle<uint8_t> &r = _rle[fid];
+                const std::vector<uint8_t> loc_buf = r.decode();
+                for(uint64_t id = 0; id < num_voxels; id++) {
+                    if(loc_buf[id] == 0) continue;
+#pragma omp critical
+                    glo_buf[id] = glo_buf[id] < loc_buf[id] ? loc_buf[id] : glo_buf[id];
+                }
+            }
+
+            if(target._file_ext_out.count("rle")) {
+                std::string rle_outf = std::filesystem::path(_project_dir) / (target._file_out + "rle");
+                compress::rle rle_out(glo_buf);
+                compress::rle_io rio(rle_out, *meta_first);
+                rio.to_file(rle_outf);
+            }
+            if(target._file_ext_out.count("raw")) {
+                std::string raw_outf = std::filesystem::path(_project_dir) / (target._file_out + "raw");
+                std::ofstream fout(raw_outf, std::ofstream::binary);
+                fout.write((char*)&glo_buf[0], glo_buf.size());
+                fout.close();
+            }
+            return true;
+        }
+
+        bool run_efficient_rle(const cfg::merge_target &target) const {
+            if(_rle.size() < 2) return false;
             benchmark::timer t("run_efficient_rle::run() - merge took");
 
             const auto meta_first = _meta.begin();
-            const glm::vec<3, size_t> dim = glm::ivec3(meta_first->at(0), meta_first->at(1), meta_first->at(2));
-            const array_order order = (array_order)(meta_first->at(3));
+            const uint64_t num_voxels = (uint64_t)meta_first->at(0) * meta_first->at(1) * meta_first->at(2);
             compress::rle<uint8_t> rle_out;
 
+            int perc = 0;
             // absolutely memory efficient
-            for(int z = 0; z < dim[2]; z++) {
-                std::cout << "progress: " << (int)((float)z/dim[2]*100) << "/" << 100 << std::endl;
-                benchmark::timer z_timer("iteration took");
-                for(int y = 0; y < dim[1]; y++)
-                for(int x = 0; x < dim[0]; x++) {
-                    const int64_t id = flatten_3dindex(dim, glm::ivec3(x,y,z), order);
-
-                    // search tissue with lowest value (lowest == highest priority)
-                    uint8_t winner_mat = 0;
-#pragma omp parallel for
-                    for(int i = 0; i < _rle.size(); i++) {
-                        const compress::rle<uint8_t> &r = _rle[i];
-                        const auto itr = r[id];
-                        assert(itr != r.end() && "rle_merger::run(): iterator out of index");
-
-                        const uint8_t mat = *itr;
-                        if(mat == 0) continue;
-                        if(winner_mat < 1) {
-#pragma omp critical
-                            winner_mat = mat;
-                            continue;
-                        }
-                        if(winner_mat > mat) {
-#pragma omp critical
-                            winner_mat = mat;
-                            continue;
-                        }
-                    }
-                    
-                    rle_out << winner_mat;
+            for(uint64_t id = 0; id < num_voxels; id++) {
+                const int cur_perc = (int)((float)id/num_voxels*100);
+                if(perc != cur_perc) {
+                    perc = cur_perc;
+                    std::cout << "progress: " << perc << "/" << 100 << std::endl;
                 }
+                // search tissue with lowest value (lowest == highest priority)
+                uint8_t winner_mat = 0;
+#pragma omp parallel for reduction (max: winner_mat)
+                for(int i = 0; i < _rle.size(); i++) {
+                    const compress::rle<uint8_t> &r = _rle[i];
+                    const uint8_t mat = *r[id];
+                    winner_mat = winner_mat < mat ? mat : winner_mat;
+                }
+                rle_out << winner_mat;
             }
 
             if(target._file_ext_out.count("rle")) {
@@ -217,48 +250,7 @@ namespace voxelize {
                 f.write((char*)&buf[0], buf.size());
                 f.close();
             }
-        }
-
-        void run_fast_rle(const cfg::merge_target &target) {
-            if(_rle.size() < 2) return;
-            benchmark::timer t("run_fast_rle::run() - merge took");
-
-            const auto meta_first = _meta.begin();
-            const glm::vec<3, size_t> dim = glm::ivec3(meta_first->at(0), meta_first->at(1), meta_first->at(2));
-            const array_order order = (array_order)(meta_first->at(3));
-
-            const uint64_t num_voxels = (uint64_t)dim.x * dim.y * dim.z;
-            std::vector<uint8_t> buffer(num_voxels, 0);
-            for(int i = 0; i < _rle.size(); i++) {
-                const compress::rle<uint8_t> &r = _rle[i];
-                std::cout << "progress: " << (int)((float)i/_rle.size()*100) << "/" << 100 << std::endl;
-                const std::vector<uint8_t> cur_arr = r.decode();
-#pragma omp parallel for
-                for(int z = 0; z < dim[2]; z++)
-                for(int y = 0; y < dim[1]; y++)
-                for(int x = 0; x < dim[0]; x++) {
-                    const int64_t id = flatten_3dindex(dim, glm::ivec3(x,y,z), order);
-                    if(cur_arr[id] == 0) continue;
-                    if(buffer[id] == 0) {
-                        buffer[id] = cur_arr[id];
-                        continue;
-                    }
-                    buffer[id] = buffer[id] > cur_arr[id] ? cur_arr[id] : buffer[id];
-                }
-            }
-
-            if(target._file_ext_out.count("rle")) {
-                std::string rle_outf = std::filesystem::path(_project_dir) / (target._file_out + "rle");
-                compress::rle rle_out(buffer);
-                compress::rle_io rio(rle_out, *meta_first);
-                rio.to_file(rle_outf);
-            }
-            if(target._file_ext_out.count("raw")) {
-                std::string raw_outf = std::filesystem::path(_project_dir) / (target._file_out + "raw");
-                std::ofstream f(raw_outf, std::ofstream::binary);
-                f.write((char*)&buffer[0], buffer.size());
-                f.close();
-            }
+            return true;
         }
     };
 };
