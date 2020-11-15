@@ -250,19 +250,17 @@ void voxelizer<rasterizer_t>::to_fs_bytes(const project_cfg &cfg, const raster_o
     const glm::ivec3 ofs = byte.loc2glob_offset_voxel();
 
     for(size_t z = 0; z < (size_t)dim_glo.z; z++) {
-        std::vector<uint8_t> buffer(dim_glo.x*dim_glo.y, 0);
+        std::vector<uint8_t> buf(dim_glo.x*dim_glo.y, 0);
         for(size_t y = 0; y < (size_t)dim_glo.y; y++)
         for(size_t x = 0; x < (size_t)dim_glo.x; x++) {
             const glm::ivec3 pos_vox = glm::ivec3(x,y,z) - ofs;
+            // voxel in local boundary?
+            const bool voxel_in = glm::all(glm::greaterThanEqual(pos_vox, glm::ivec3(0))) && glm::all(glm::lessThan(pos_vox, dim_loc));
+            const uint8_t mat = voxel_in ? byte.get_voxel(pos_vox) : 0;
             const int64_t loc_id = flatten_2dindex(dim_glo.xy(), glm::ivec2(x,y), cfg.xml._byte_order);
-
-            uint8_t mat = 0;
-            if(glm::all(glm::greaterThanEqual(pos_vox, glm::ivec3(0))) && glm::all(glm::lessThan(pos_vox, dim_loc))) {
-                mat = byte.get_voxel(pos_vox);
-            }
-            buffer[loc_id] = mat;
+            buf[loc_id] = mat;
         }
-        f.write((char*)&buffer[0], buffer.size());
+        f.write((char*)&buf[0], buf.size());
     }
     f.close();
 
@@ -291,17 +289,44 @@ void voxelizer<rasterizer_t>::to_fs_rle(const project_cfg &cfg, const raster_out
     const glm::ivec3 ofs = byte.loc2glob_offset_voxel();
     compress::rle<uint8_t> rle;
 
+    // local chunk buffer (profit from  parallelization)
+    using chunk_t = std::pair<size_t/*reps*/, uint8_t/*value*/>;
+    std::vector<chunk_t> buf;
+
+#pragma omp parallel
+{
+    std::vector<chunk_t> loc_buf;
+#pragma omp for nowait schedule(static)
     for(size_t z = 0; z < (size_t)dim_glo.z; z++)
     for(size_t y = 0; y < (size_t)dim_glo.y; y++)
     for(size_t x = 0; x < (size_t)dim_glo.x; x++) {
         const glm::ivec3 pos_vox = glm::ivec3(x,y,z) - ofs;
-        if(glm::any(glm::lessThan(pos_vox, glm::ivec3(0))) || glm::any(glm::greaterThanEqual(pos_vox, dim_loc))) {
-            rle << (uint8_t)0;
+        // voxel in local boundary?
+        const bool voxel_in = glm::all(glm::greaterThanEqual(pos_vox, glm::ivec3(0))) && glm::all(glm::lessThan(pos_vox, dim_loc));
+        const uint8_t mat = voxel_in ? byte.get_voxel(pos_vox) : 0;
+        
+        // init the array
+        if(loc_buf.empty()) {
+            loc_buf.push_back({1, mat});
             continue;
         }
-        const uint8_t mat = byte.get_voxel(pos_vox);
-        rle << mat;
+
+        // either increase counter or append new chunk
+        auto &last = loc_buf.back();
+        if(last.second == mat) {
+            last.first++;
+        }
+        else {
+            loc_buf.push_back({1, mat});
+        }
     }
+#pragma omp for schedule(static) ordered
+    for(int i = 0; i < omp_get_num_threads(); i++) {
+#pragma omp ordered
+        buf.insert(buf.end(), loc_buf.begin(), loc_buf.end());
+    }
+}
+    rle.encode(buf);
 
     const std::vector<size_t> meta = { (size_t)dim_glo.x, (size_t)dim_glo.y, (size_t)dim_glo.z, (size_t)cfg.xml._byte_order};
     compress::rle_io rle_io(rle, meta);
