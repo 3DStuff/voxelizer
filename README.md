@@ -1,3 +1,30 @@
+# Added 15112020:
+Added feature to merge the bytewise output into one array. 
+Highest priority has always the greatest material ID.
+The resulting array includes a new voxel model with all the materials of project.
+
+Works like this:
+| In1|   |   | In2|   |   | Out |   |
+|----|---|---|----|---|---|-----|---|
+| 1  | 0 |   | 3  | 2 |   | 3   | 2 |
+| 0  | 1 |   | 2  | 1 |   | 2   | 1 |
+
+For RLE files there is the option to export <code>efficiently</code>, 
+which is slow but saves memory while keeping the data RLE encoded the whole time.
+```
+<merge file_out="merge_fast.rle|raw" type="fast"></merge>
+<merge file_out="merge_eff.rle|raw" type="efficient"></merge>
+```
+# Added 10112020:
+Added a feature to the project .xml file. It is now possible to define several output formats.
+The file extension is defined by the appendix (.obj, .stl, ..). 
+Now the extension can be concatenated by <code>|</code>. 
+```
+<file file_in="./STL/foo.stl" file_out="foo.stl" material_interior="1" material_shell="1"></file>
+<file file_in="./STL/foo.stl" file_out="foo.stl|obj|raw|rle" material_interior="2" material_shell="2"></file>
+```
+<code>stl|obj|raw|rle</code> will create an "foo.stl", "foo.obj", "foo.raw" and "foo.rle" file in the result directory.
+  
 # Added 03112020:
 * Hex mesh: removal of invisible faces 
 * Wavefront (*.obj) import/export 
