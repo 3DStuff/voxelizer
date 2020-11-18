@@ -40,24 +40,34 @@ namespace voxelize {
         std::vector<std::string> _raw;
 
     public:
-        rle_merge(const cfg::xml_project &project_cfg, const mesh::bbox<float> &glob_bbox) : _project_cfg(project_cfg), _glob_bbox(glob_bbox)
+        rle_merge(const cfg::xml_project &project_cfg, const mesh::bbox<float> &glob_bbox) 
+        : _project_cfg(project_cfg), _glob_bbox(glob_bbox)
         {
             _project_dir = _project_cfg.target_dir();
-
-            std::vector<std::string> rle_files;
             for (const auto & entry : std::filesystem::directory_iterator(_project_dir)) {
-                if(".rle" != entry.path().extension()) continue;
-                std::cout << "add: " << entry.path() << std::endl; 
-                compress::rle_io<base_t> rle_inp;
-                rle_inp.from_file(entry.path().string());
-                _rle.push_back(rle_inp.get());
-                _meta.push_back(rle_inp.meta());
-            }
+                // skip merge targets
+                bool skip = false;
+                for(const auto &f : project_cfg.merge_targets()) {
+                    const std::string e = entry.path().string();
+                    if(e.find(f._file_out) != e.npos) {
+                        skip = true;
+                    }
+                }
+                if(skip) {
+                    std::cout << "skip: " << entry.path().string() << std::endl;
+                    continue;
+                }
 
-            for (const auto & entry : std::filesystem::directory_iterator(_project_dir)) {
-                if(".raw" != entry.path().extension()) continue;
-                std::cout << "add: " << entry.path() << std::endl; 
-                _raw.push_back(entry.path().string());
+                if(".rle" == entry.path().extension()) {
+                    std::cout << "add: " << entry.path() << std::endl; 
+                    compress::rle_io<base_t> rle_inp;
+                    rle_inp.from_file(entry.path().string());
+                    _rle.push_back(rle_inp.get());
+                    _meta.push_back(rle_inp.meta());
+                }
+                if(".raw" == entry.path().extension()) {
+                    _raw.push_back(entry.path().string());      
+                }
             }
 
             // sanity checks
@@ -130,7 +140,7 @@ namespace voxelize {
                 if(perc != cur_perc) {
                     perc = cur_perc;
 #pragma omp critical
-                    std::cout << "progress: " << (int)((float)prog/_raw.size()*100) << "/" << 100 << std::endl;
+                    std::cout << "progress: " << perc << "/" << 100 << std::endl;
                 }
 #pragma omp atomic
                 prog++;
@@ -224,14 +234,13 @@ namespace voxelize {
             compress::rle<uint8_t> rle_out;
 
             int perc = 0;
-            // absolutely memory efficient
             for(uint64_t id = 0; id < num_voxels; id++) {
                 const int cur_perc = (int)((float)id/num_voxels*100);
                 if(perc != cur_perc) {
                     perc = cur_perc;
                     std::cout << "progress: " << perc << "/" << 100 << std::endl;
                 }
-                // search tissue with lowest value (lowest == highest priority)
+                // search tissue with highest value (highest == highest priority)
                 uint8_t winner_mat = 0;
 #pragma omp parallel for reduction (max: winner_mat)
                 for(int i = 0; i < _rle.size(); i++) {
