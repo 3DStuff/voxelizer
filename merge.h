@@ -134,13 +134,17 @@ namespace voxelize {
 
             int perc = 0;
             size_t prog = 0;
+            benchmark::timer ms("time");
 #pragma omp parallel for
             for(size_t fid = 1; fid < _raw.size(); fid++) {
                 const int cur_perc = (int)((float)prog/_raw.size()*100);
                 if(perc != cur_perc) {
                     perc = cur_perc;
 #pragma omp critical
-                    std::cout << "progress: " << perc << "/" << 100 << std::endl;
+{
+                    std::cout << "progress: " << perc << "/" << 100 << " ";
+                    ms.reset();
+}
                 }
 #pragma omp atomic
                 prog++;
@@ -186,13 +190,17 @@ namespace voxelize {
 
             int perc = 0;
             uint64_t prog = 0;
+            benchmark::timer ms("time");
 #pragma omp parallel for
             for(size_t fid = 0; fid < _rle.size(); fid++) {
                 const int cur_perc = (int)((float)prog/_rle.size()*100);
                 if(perc != cur_perc) {
                     perc = cur_perc;
 #pragma omp critical
-                    std::cout << "progress: " << perc << "/" << 100 << std::endl;
+{
+                    std::cout << "progress: " << perc << "/" << 100 << " ";
+                    ms.reset();
+}
                 }
 #pragma omp atomic
                 prog++;
@@ -234,11 +242,13 @@ namespace voxelize {
             compress::rle<uint8_t> rle_out;
 
             int perc = 0;
+            benchmark::timer ms("time");
             for(uint64_t id = 0; id < num_voxels; id++) {
                 const int cur_perc = (int)((float)id/num_voxels*100);
                 if(perc != cur_perc) {
                     perc = cur_perc;
-                    std::cout << "progress: " << perc << "/" << 100 << std::endl;
+                    std::cout << "progress: " << perc << "/" << 100 << " ";
+                    ms.reset();
                 }
                 // search tissue with highest value (highest == highest priority)
                 uint8_t winner_mat = 0;

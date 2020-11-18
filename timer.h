@@ -21,5 +21,11 @@ namespace benchmark {
             auto end = std::chrono::steady_clock::now();
             std::cout << _info_message << ": " << std::chrono::duration_cast<std::chrono::milliseconds>(end-_beg).count() << " ms" << std::endl;
         }
+
+        void reset() {
+            auto end = std::chrono::steady_clock::now();
+            std::cout << _info_message << ": " << std::chrono::duration_cast<std::chrono::milliseconds>(end-_beg).count() << " ms" << std::endl;
+            _beg = end;
+        }
     };
 };
