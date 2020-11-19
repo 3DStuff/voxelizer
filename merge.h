@@ -39,6 +39,8 @@ namespace voxelize {
         std::vector<compress::rle<base_t>> _rle;
         std::vector<std::string> _raw;
 
+        int _num_threads = 1;
+
     public:
         rle_merge(const cfg::xml_project &project_cfg, const mesh::bbox<float> &glob_bbox) 
         : _project_cfg(project_cfg), _glob_bbox(glob_bbox)
@@ -70,22 +72,67 @@ namespace voxelize {
                 }
             }
 
-            // sanity checks
+            // rle sanity checks
             if(!_rle.empty()) assert(_meta.begin()->size() == 4 && "rle_merge::run(): *.rle files invalid :(");
-
             auto rle_first = _rle.begin();
             auto ritr = _rle.begin();
             while(ritr != _rle.end()) {
                 assert(ritr->data()._uncompressed_size == rle_first->data()._uncompressed_size && "rle_merge::run(): rle files are incompatible :(");
                 ritr++;
             }
-            
             auto meta_first = _meta.begin();
             auto mitr = _meta.begin();
             while(mitr != _meta.end()) {
                 const bool dim_equal = std::equal(meta_first->begin(), meta_first->end(), mitr->begin());
                 assert(dim_equal && "rle_merge::run(): rle files are incompatible :(");
                 mitr++;
+            }
+
+            // estimate maximum number of threads
+            // the more threads the more memory is necessary
+            // we test allocate memory to check whether the programm will run
+            auto test_alloc = [](int num_threads, const size_t num_voxels) {
+                auto ta_impl = [](int num_threads, const size_t num_voxels, const auto& fcn) {
+                    if(num_threads < 1) {
+                        return 0;
+                    }
+                    constexpr int safety_margin = 1;
+                    volatile char *tmp = nullptr;
+                    try {
+                        const size_t n = (num_threads+safety_margin+1) * num_voxels;
+                        tmp = new volatile char[n];
+                    }
+                    catch(std::bad_alloc &ba) {
+                        if(tmp) delete tmp;
+                        std::cerr << "Not enough memory for " << num_threads << " threads :(" << std::endl;
+                        return fcn(--num_threads, num_voxels, fcn);
+                    }
+                    if(tmp) delete tmp;
+                    return num_threads;
+                };
+                return ta_impl(num_threads, num_voxels, ta_impl);
+            };
+
+            const auto shape = *_project_cfg.shapes().begin();
+            const glm::ivec3 dim = glm::ceil(_glob_bbox.dim() / shape._voxel_size);
+            const size_t num_voxels = (size_t)dim.x * dim.y * dim.z;
+            _num_threads = test_alloc(omp_get_max_threads(), num_voxels);
+            for(const auto &target : _project_cfg.merge_targets()) {
+                if(target._type == "efficient") continue;
+
+                if(_num_threads < omp_get_max_threads() && _num_threads >= 1) {
+                    const float mem_gb = (num_voxels * (omp_get_max_threads()+1)) / (1024*1024*1024);
+                    std::cout << "For target: " << target._file_out << std::endl;
+                    std::cerr << "  * reduce thread count due to lack of memory" << std::endl;
+                    std::cerr << "  * free memory needed for run with " << omp_get_max_threads() << " threads: " << mem_gb << " GB" << std::endl;
+                }
+                else if(_num_threads < 1) {
+                    const float mem_gb = (num_voxels * 2) / (1024*1024*1024);
+                    std::cout << "For target: " << target._file_out << std::endl;
+                    std::cerr << "  * fast merging not possible due to lack of memory." << std::endl;
+                    std::cerr << "  * consider using \"efficient\" export (type=\"efficient\")";
+                    std::cerr << "  * alternatively increase free memory to at least " << mem_gb << " GB" << std::endl;
+                }
             }
         }
 
@@ -95,7 +142,6 @@ namespace voxelize {
                     std::cerr << "Merging only possible for binary files" << std::endl;
                     return;
                 }
-
                 if(target._type == "fast") {
                     if(run_fast_raw(target)) continue;
                     if(run_fast_rle(target)) continue;
@@ -109,6 +155,7 @@ namespace voxelize {
     protected:
         bool run_fast_raw(const cfg::merge_target &target) {
             if(_raw.size() < 2) return false;
+            if(_num_threads < 1) return false;
             benchmark::timer t("run_fast_raw::run() - merge took");
 
             // get meta
@@ -135,6 +182,8 @@ namespace voxelize {
             int perc = 0;
             size_t prog = 0;
             benchmark::timer ms("time");
+
+            omp_set_num_threads(_num_threads);
 #pragma omp parallel for
             for(size_t fid = 1; fid < _raw.size(); fid++) {
                 const int cur_perc = (int)((float)prog/_raw.size()*100);
@@ -182,15 +231,18 @@ namespace voxelize {
 
         bool run_fast_rle(const cfg::merge_target &target) {
             if(_rle.size() < 2) return false;
+            if(_num_threads < 1) return false;
             benchmark::timer t("run_fast_rle::run() - merge took");
 
             const auto meta_first = _meta.begin();
-            const uint64_t num_voxels = (uint64_t)meta_first->at(0) * meta_first->at(1) * meta_first->at(2);
+            const size_t num_voxels = (size_t)meta_first->at(0) * meta_first->at(1) * meta_first->at(2);
             std::vector<uint8_t> glo_buf(num_voxels, 0);
 
             int perc = 0;
-            uint64_t prog = 0;
+            size_t prog = 0;
             benchmark::timer ms("time");
+
+            omp_set_num_threads(_num_threads);
 #pragma omp parallel for
             for(size_t fid = 0; fid < _rle.size(); fid++) {
                 const int cur_perc = (int)((float)prog/_rle.size()*100);
@@ -207,7 +259,7 @@ namespace voxelize {
 
                 const compress::rle<uint8_t> &r = _rle[fid];
                 const std::vector<uint8_t> loc_buf = r.decode();
-                for(uint64_t id = 0; id < num_voxels; id++) {
+                for(size_t id = 0; id < num_voxels; id++) {
                     if(loc_buf[id] == 0) continue;
 #pragma omp critical
                     glo_buf[id] = glo_buf[id] < loc_buf[id] ? loc_buf[id] : glo_buf[id];
@@ -238,12 +290,12 @@ namespace voxelize {
             benchmark::timer t("run_efficient_rle::run() - merge took");
 
             const auto meta_first = _meta.begin();
-            const uint64_t num_voxels = (uint64_t)meta_first->at(0) * meta_first->at(1) * meta_first->at(2);
+            const size_t num_voxels = (size_t)meta_first->at(0) * meta_first->at(1) * meta_first->at(2);
             compress::rle<uint8_t> rle_out;
 
             int perc = 0;
             benchmark::timer ms("time");
-            for(uint64_t id = 0; id < num_voxels; id++) {
+            for(size_t id = 0; id < num_voxels; id++) {
                 const int cur_perc = (int)((float)id/num_voxels*100);
                 if(perc != cur_perc) {
                     perc = cur_perc;

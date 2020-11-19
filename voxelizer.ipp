@@ -74,7 +74,7 @@ namespace {
         }
 
         std::vector<uint8_t> get_voxels() const {
-            const uint64_t buf_size = glm::compMul(_dim_global_mesh_vox);
+            const size_t buf_size = (size_t)_dim_global_mesh_vox.x * _dim_global_mesh_vox.y * _dim_global_mesh_vox.z;
             assert((buf_size < std::numeric_limits<uint32_t>::max()) && "to_bytes(): Array too huge");
             std::vector<uint8_t> buffer(buf_size, 0);
 
