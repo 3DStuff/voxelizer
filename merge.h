@@ -97,10 +97,10 @@ namespace voxelize {
                         return 0;
                     }
                     constexpr int safety_margin = 1;
-                    volatile char *tmp = nullptr;
+                    char *tmp = nullptr;
                     try {
                         const size_t n = (num_threads+safety_margin+1) * num_voxels;
-                        tmp = new volatile char[n];
+                        tmp = new char[n];
                     }
                     catch(std::bad_alloc &ba) {
                         if(tmp) delete tmp;
