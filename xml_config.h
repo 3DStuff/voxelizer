@@ -7,11 +7,25 @@
 #include <string>
 #include <iostream>
 #include <filesystem>
+#include <limits>
 #include <vector>
 #include <regex>
 #include <set>
 #include <iostream>
 
+namespace detail
+{
+    template <typename T, std::size_t ... Is>
+    constexpr std::array<T, sizeof...(Is)>
+    create_array(T value, std::index_sequence<Is...>) {
+        return {{(static_cast<void>(Is), value)...}};
+    }
+}
+
+template <std::size_t N, typename T>
+constexpr std::array<T, N> create_array(const T& value) {
+    return detail::create_array(value, std::make_index_sequence<N>());
+}
 
 namespace cfg {
     namespace hidden {
@@ -21,15 +35,18 @@ namespace cfg {
     }
     
     struct merge_target {
-        std::string _file_out;                  // without ext
+        std::string _file_out;
         std::string _type;
         std::set<std::string> _file_ext_out;
+        // for byte like voxels, a prio table like this is fine
+        // initialize with lowest prio
+        std::array<uint8_t, 256> _prio_map = create_array<256, uint8_t>(255);
     };
 
     //! shape settings
     struct shape_settings {
         std::string _file_in;
-        std::string _file_out;                  // without ext
+        std::string _file_out;
         std::string _file_ext_inp;
         std::set<std::string> _file_ext_out;
         array_order _byte_order;
@@ -101,7 +118,21 @@ namespace cfg {
                     file_out.erase(start_ext, ext.size());
                     std::set<std::string> file_ext_out = split(ext, "|");
 
-                    _merge_targets.push_back({file_out, type, file_ext_out});
+                    merge_target trg = {file_out, type, file_ext_out};
+
+                    // read optional priority table
+                    for (pugi::xml_node mat : tool.children("mat")) {
+                        const uint8_t id = mat.attribute("id").as_uint();
+                        const uint8_t prio = mat.attribute("prio").as_uint();
+                        if(id < 256 && prio < 256) {
+                            trg._prio_map[id] = prio;
+                        }
+                        else {
+                            std::cerr << "Prios need to be constrained: 0 <= x <= 255" << std::endl;
+                        }
+                    }
+
+                    _merge_targets.push_back(trg);
                 }
 
                 for (pugi::xml_node tool : doc.child("project").children("file")) {

@@ -152,7 +152,19 @@ namespace voxelize {
             }
         }
 
-    protected:
+        // returns the tissue with higher priority (smallest value)
+        static uint8_t smallest(const cfg::merge_target &target, uint8_t first, uint8_t second) {
+            uint8_t pf = first;
+            uint8_t ps = second;
+            if(!target._prio_map.empty()) {
+                auto &prios = target._prio_map;
+                pf = prios[first];
+                ps = prios[second];
+            }
+            return pf < ps ? first : second;
+        }
+
+    protected:   
         bool run_fast_raw(const cfg::merge_target &target) {
             if(_raw.size() < 2) return false;
             if(_num_threads < 1) return false;
@@ -206,8 +218,9 @@ namespace voxelize {
 
                 for(int id = 0; id < loc_buf.size(); id++) {
                     if(loc_buf[id] == 0) continue;
+
 #pragma omp critical
-                    glo_buf[id] = glo_buf[id] < loc_buf[id] ? loc_buf[id] : glo_buf[id];
+                    glo_buf[id] = smallest(target, glo_buf[id], loc_buf[id]);
                 }
             }
 
@@ -262,7 +275,7 @@ namespace voxelize {
                 for(size_t id = 0; id < num_voxels; id++) {
                     if(loc_buf[id] == 0) continue;
 #pragma omp critical
-                    glo_buf[id] = glo_buf[id] < loc_buf[id] ? loc_buf[id] : glo_buf[id];
+                    glo_buf[id] = smallest(target, glo_buf[id], loc_buf[id]);
                 }
             }
 
@@ -308,7 +321,7 @@ namespace voxelize {
                 for(int i = 0; i < _rle.size(); i++) {
                     const compress::rle<uint8_t> &r = _rle[i];
                     const uint8_t mat = *r[id];
-                    winner_mat = winner_mat < mat ? mat : winner_mat;
+                    winner_mat = smallest(target, mat, winner_mat);
                 }
                 rle_out << winner_mat;
             }
