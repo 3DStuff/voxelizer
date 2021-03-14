@@ -245,18 +245,18 @@ namespace voxelize {
             }
 
             if(target._file_ext_out.count("rle")) {
-                std::string rle_outf = std::filesystem::path(_project_dir) / (target._file_out + "rle");
+                std::string rle_outf = (std::filesystem::path(_project_dir) / (target._file_out + "rle")).string();
                 compress::rle rle_out(glo_buf);
                 compress::rle_io rio(rle_out, meta);
                 rio.to_file(rle_outf);
             }
             if(target._file_ext_out.count("raw")) {
-                std::string raw_outf = std::filesystem::path(_project_dir) / (target._file_out + "raw");
+                std::string raw_outf = (std::filesystem::path(_project_dir) / (target._file_out + "raw")).string();
                 std::ofstream fout(raw_outf, std::ofstream::binary);
                 fout.write((char*)&glo_buf[0], glo_buf.size());
                 fout.close();
                 // generate info file
-                std::string raw_infof = std::filesystem::path(_project_dir) / (target._file_out + "info");
+                std::string raw_infof = (std::filesystem::path(_project_dir) / (target._file_out + "info")).string();
                 write_info(raw_infof, {meta[0], meta[1], meta[2]}, meta[3]);
             }
             return true;
@@ -302,18 +302,18 @@ namespace voxelize {
             }
 
             if(target._file_ext_out.count("rle")) {
-                std::string rle_outf = std::filesystem::path(_project_dir) / (target._file_out + "rle");
+                std::string rle_outf = (std::filesystem::path(_project_dir) / (target._file_out + "rle")).string();
                 compress::rle rle_out(glo_buf);
                 compress::rle_io rio(rle_out, *meta_first);
                 rio.to_file(rle_outf);
             }
             if(target._file_ext_out.count("raw")) {
-                std::string raw_outf = std::filesystem::path(_project_dir) / (target._file_out + "raw");
+                std::string raw_outf = (std::filesystem::path(_project_dir) / (target._file_out + "raw")).string();
                 std::ofstream fout(raw_outf, std::ofstream::binary);
                 fout.write((char*)&glo_buf[0], glo_buf.size());
                 fout.close();
                 // generate info file
-                std::string raw_infof = std::filesystem::path(_project_dir) / (target._file_out + "info");
+                std::string raw_infof = (std::filesystem::path(_project_dir) / (target._file_out + "info")).string();
                 const glm::ivec3 dim = {meta_first->at(0), meta_first->at(1), meta_first->at(2)};
                 write_info(raw_infof, dim, meta_first->at(3));
             }
@@ -349,18 +349,18 @@ namespace voxelize {
             }
 
             if(target._file_ext_out.count("rle")) {
-                std::string rle_outf = std::filesystem::path(_project_dir) / (target._file_out + "rle");
+                std::string rle_outf = (std::filesystem::path(_project_dir) / (target._file_out + "rle")).string();
                 compress::rle_io rio(rle_out, *meta_first);
                 rio.to_file(rle_outf);
             }
             if(target._file_ext_out.count("raw")) {
-                std::string raw_outf = std::filesystem::path(_project_dir) / (target._file_out + "raw");
+                std::string raw_outf = (std::filesystem::path(_project_dir) / (target._file_out + "raw")).string();
                 std::ofstream f(raw_outf, std::ofstream::binary);
                 std::vector<uint8_t> buf = rle_out.decode();
                 f.write((char*)&buf[0], buf.size());
                 f.close();
                 // generate info file
-                std::string raw_infof = std::filesystem::path(_project_dir) / (target._file_out + "info");
+                std::string raw_infof = (std::filesystem::path(_project_dir) / (target._file_out + "info")).string();
                 const glm::ivec3 dim = {meta_first->at(0), meta_first->at(1), meta_first->at(2)};
                 write_info(raw_infof, dim, meta_first->at(3));
             }
