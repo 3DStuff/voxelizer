@@ -27,14 +27,14 @@ namespace rasterize {
                 int _x;
                 int _y;
                 const parent_t *_p = nullptr;
-                proxy_ii(const parent_t *p, const int x, const int y) : _p(p), _x(x), _y(y) {}
+                proxy_ii(const parent_t *p, const int x, const int y) : _x(x), _y(y), _p(p) {}
                 uint8_t operator[] (const int z) const {
                     return _p->get(_x, _y, z);
                 }
             };
             int _x;
             const parent_t *_p = nullptr;
-            proxy_i(const parent_t *p, const int x) : _p(p), _x(x) {}
+            proxy_i(const parent_t *p, const int x) : _x(x), _p(p) {}
             proxy_ii operator[] (const int y) const {
                 return proxy_ii(_p, _x, y);
             }
@@ -71,7 +71,7 @@ namespace rasterize {
                 if(arr.size() == 0) return false;
                 if(arr.size() == 1) return false;
                 bool is_out = arr.size() % 2 == 0 ? true : false;                               
-                for(int i = 0; i < arr.size()-1; i++) {   
+                for(size_t i = 0; i < arr.size()-1; i++) {   
                     if(pos > arr[i] && pos < arr[i+1]) {
                         return is_out;
                     }
@@ -82,8 +82,10 @@ namespace rasterize {
             auto not_in_shell = [](const auto &arr, const int x, const int y) {
                 if(x < 0) return false;
                 if(y < 0) return false;
-                if(x >= arr.size()-1) return false;
-                if(y >= arr[x].size()-1) return false;
+                assert(arr.size() <= std::numeric_limits<int>::max());
+                if(x >= (int)arr.size()-1) return false;
+                assert(arr[x].size() <= std::numeric_limits<int>::max());
+                if(y >= (int)arr[x].size()-1) return false;
                 return true;
             };
 

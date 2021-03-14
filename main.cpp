@@ -29,7 +29,7 @@ void show_help() {
 }
 
 int main(int argc, char * argv[]) {
-#ifdef _OPENMP
+#ifdef CMAKE_OMP_FOUND
     size_t num_threads = omp_get_max_threads();
     std::cout << "omp_get_num_threads(): " << num_threads << std::endl;
     omp_set_num_threads(num_threads);

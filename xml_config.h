@@ -105,7 +105,7 @@ namespace cfg {
                     _raw_fname = t.attribute("raw_fname").as_string();
                 }
 
-                for (pugi::xml_node tool : doc.child("project").children("merge")) {
+                for(pugi::xml_node tool : doc.child("project").children("merge")) {
                     std::string file_out = tool.attribute("file_out").as_string();
                     std::string type = tool.attribute("type").as_string();
 
@@ -122,9 +122,9 @@ namespace cfg {
 
                     // read optional priority table
                     for (pugi::xml_node mat : tool.children("mat")) {
-                        const uint8_t id = mat.attribute("id").as_uint();
-                        const uint8_t prio = mat.attribute("prio").as_uint();
-                        if(id < 256 && prio < 256) {
+                        const uint32_t id = mat.attribute("id").as_uint();
+                        const uint32_t prio = mat.attribute("prio").as_uint();
+                        if(id <= 255 && prio <= 255) {
                             trg._prio_map[id] = prio;
                         }
                         else {
@@ -169,8 +169,6 @@ namespace cfg {
                         std::cerr << "No file extension defined for " << file_out << ". Maybe not well supported types are *.stl, *.obj, *.vox, *.raw. ";
                         std::cerr << "There will be no export, but the rasterizer will run anyway" << std::endl;
                     }
-
-                    const int prio = tool.attribute("merge_priority").as_int();
                     const int mat_in = tool.attribute("material_interior").as_int();
                     const int mat_out = tool.attribute("material_shell").as_int();
                     _shapes.push_back({file_in, file_out, file_ext_in, file_ext_out, align, mat_in, mat_out, _voxel_size});
@@ -200,16 +198,16 @@ namespace cfg {
         }
 
     public:
-        const bool voxel_size_defined() const {
+        bool voxel_size_defined() const {
             return _voxel_size_defined;
         }
-        const bool grid_size_defined() const {
+        bool grid_size_defined() const {
             return _grid_size_defined;
         }
-        const float voxel_size() const {
+        float voxel_size() const {
             return _voxel_size;
         }
-        const int max_grid_size() const {
+        int max_grid_size() const {
             return _grid_size;
         }
         const std::vector<shape_settings> &shapes() const {

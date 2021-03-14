@@ -245,7 +245,6 @@ namespace checks {
         ) 
         {
             std::set<int> inters_dist;
-            glm::vec<3, base_t> dir;
             for(const auto &f : face_indices) {
                 const glm::vec<3, base_t> &v1 = hidden::swizzle_vector_3d(vert_buffer[f[0]], mode);
                 const glm::vec<3, base_t> &v2 = hidden::swizzle_vector_3d(vert_buffer[f[1]], mode);

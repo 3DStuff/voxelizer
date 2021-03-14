@@ -5,11 +5,16 @@ project(VoxelMagick LANGUAGES CXX)
 find_package(GTest)
 find_package(OpenMP)
 
+set(BUILD_COMPILE_FLAGS "-Wextra -Wall")
+add_definitions(${BUILD_COMPILE_FLAGS})
+
+if(TARGET OpenMP::OpenMP_CXX)
+    set(OMP_COMPILE_FLAGS "-fopenmp -DCMAKE_OMP_FOUND")
+    add_definitions(${OMP_COMPILE_FLAGS})
+endif()
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
-#set(CMAKE_CXX_FLAGS "-O2 -g -fopenmp")
-#set(CMAKE_CXX_FLAGS "-O0 -g")
 
 find_program(CCACHE_PROGRAM ccache)
 if(CCACHE_PROGRAM)

@@ -41,8 +41,6 @@ namespace {
         : _cfg(cfg), _raster_out(raster_out)
         {
             const glm::vec3 prj_dim = _cfg.glo_bbox.dim();
-            float max_grid_size = glm::compMax(glm::ceil(prj_dim / cfg.xml._voxel_size));
-
             _offset_vox = glm::round((_cfg.loc_bbox._min - _cfg.glo_bbox._min) / _cfg.xml._voxel_size);    
             _dim_global_mesh_vox = glm::ceil(prj_dim / cfg.xml._voxel_size);
         }
@@ -320,8 +318,12 @@ void voxelizer<rasterizer_t>::to_fs_rle(const project_cfg &cfg, const raster_out
             loc_buf.push_back({1, mat});
         }
     }
+    int num_threads = 1;
+#ifdef CMAKE_OMP_FOUND
+    num_threads = omp_get_num_threads();
+#endif
 #pragma omp for schedule(static) ordered
-    for(int i = 0; i < omp_get_num_threads(); i++) {
+    for(int i = 0; i < num_threads; i++) {
 #pragma omp ordered
         buf.insert(buf.end(), loc_buf.begin(), loc_buf.end());
     }
@@ -416,7 +418,7 @@ bool voxelizer<rasterizer_t>::load() {
         }
 
         const mesh::bbox<float> local_bbox = mesh.bounding_box();
-        _rasterizer_res.push_back({cfg, mesh, local_bbox});
+        _rasterizer_res.push_back(project_cfg(cfg, mesh, local_bbox));
 
         // calculate the gloabel project bounding box on the fly
         _glob_bbox.extend(local_bbox);
@@ -444,6 +446,8 @@ void voxelizer<rasterizer_t>::run() {
     }
 
     for(project_cfg &cfg : _rasterizer_res) {
+        assert(cfg.loc_bbox.valid() && "voxelizer<rasterizer_t>::run() - Invalid bbox");
+
         // calculate uniorm scale factor (+/- 1 voxel)
         // keeping the size ratio of each voxel model in the project constant to each other
         const glm::vec3 cur_dim_voxel = cfg.loc_bbox.dim() / cfg.xml._voxel_size;

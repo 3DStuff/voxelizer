@@ -40,6 +40,7 @@ namespace voxelize {
         std::vector<std::string> _raw;
 
         int _num_threads = 1;
+        int _max_threads = 1;
 
     public:
         rle_merge(const cfg::xml_project &project_cfg, const mesh::bbox<float> &glob_bbox) 
@@ -74,10 +75,9 @@ namespace voxelize {
 
             // rle sanity checks
             if(!_rle.empty()) assert(_meta.begin()->size() == 4 && "rle_merge::run(): *.rle files invalid :(");
-            auto rle_first = _rle.begin();
             auto ritr = _rle.begin();
             while(ritr != _rle.end()) {
-                assert(ritr->data()._uncompressed_size == rle_first->data()._uncompressed_size && "rle_merge::run(): rle files are incompatible :(");
+                assert(ritr->data()._uncompressed_size == _rle.begin()->data()._uncompressed_size && "rle_merge::run(): rle files are incompatible :(");
                 ritr++;
             }
             auto meta_first = _meta.begin();
@@ -85,12 +85,14 @@ namespace voxelize {
             while(mitr != _meta.end()) {
                 const bool dim_equal = std::equal(meta_first->begin(), meta_first->end(), mitr->begin());
                 assert(dim_equal && "rle_merge::run(): rle files are incompatible :(");
+                std::ignore = dim_equal;
                 mitr++;
             }
 
             // estimate maximum number of threads
             // the more threads the more memory is necessary
             // we test allocate memory to check whether the programm will run
+#ifdef CMAKE_OMP_FOUND
             auto test_alloc = [](int num_threads, const size_t num_voxels) {
                 auto ta_impl = [](int num_threads, const size_t num_voxels, const auto& fcn) {
                     if(num_threads < 1) {
@@ -102,7 +104,7 @@ namespace voxelize {
                         const size_t n = (num_threads+safety_margin+1) * num_voxels;
                         tmp = new char[n];
                     }
-                    catch(std::bad_alloc &ba) {
+                    catch(...) {
                         if(tmp) delete tmp;
                         std::cerr << "Not enough memory for " << num_threads << " threads :(" << std::endl;
                         return fcn(--num_threads, num_voxels, fcn);
@@ -112,19 +114,23 @@ namespace voxelize {
                 };
                 return ta_impl(num_threads, num_voxels, ta_impl);
             };
-
+#endif
             const auto shape = *_project_cfg.shapes().begin();
             const glm::ivec3 dim = glm::ceil(_glob_bbox.dim() / shape._voxel_size);
             const size_t num_voxels = (size_t)dim.x * dim.y * dim.z;
+
+#ifdef CMAKE_OMP_FOUND
+            _max_threads = omp_get_max_threads();
             _num_threads = test_alloc(omp_get_max_threads(), num_voxels);
+#endif
             for(const auto &target : _project_cfg.merge_targets()) {
                 if(target._type == "efficient") continue;
 
-                if(_num_threads < omp_get_max_threads() && _num_threads >= 1) {
-                    const float mem_gb = (num_voxels * (omp_get_max_threads()+1)) / (1024*1024*1024);
+                if(_num_threads < _max_threads && _num_threads >= 1) {
+                    const float mem_gb = (num_voxels * (_max_threads+1)) / (1024*1024*1024);
                     std::cout << "For target: " << target._file_out << std::endl;
                     std::cerr << "  * reduce thread count due to lack of memory" << std::endl;
-                    std::cerr << "  * free memory needed for run with " << omp_get_max_threads() << " threads: " << mem_gb << " GB" << std::endl;
+                    std::cerr << "  * free memory needed for run with " << _max_threads << " threads: " << mem_gb << " GB" << std::endl;
                 }
                 else if(_num_threads < 1) {
                     const float mem_gb = (num_voxels * 2) / (1024*1024*1024);
@@ -154,6 +160,12 @@ namespace voxelize {
 
         // returns the tissue with higher priority (smallest value)
         static uint8_t smallest(const cfg::merge_target &target, uint8_t first, uint8_t second) {
+            // one of the materials background
+            // no further check necessary
+            if(first == 0) return second;
+            if(second == 0) return first;
+
+            // check priority if defined
             uint8_t pf = first;
             uint8_t ps = second;
             if(!target._prio_map.empty()) {
@@ -179,10 +191,13 @@ namespace voxelize {
                 assert(buf.size() % dim.x == 0 && "");
                 assert(buf.size() % dim.y == 0 && "");
                 assert(buf.size() % dim.z == 0 && "");
-                const size_t z = buf.size() / (dim.x*dim.y);
-                const size_t y = buf.size() / (dim.x*dim.z);
-                const size_t x = buf.size() / (dim.y*dim.z);
-                assert(glm::all(glm::equal(glm::ivec3(x,y,z), dim)) && "");
+                glm::ivec3 chk(
+                    buf.size() / (dim.y*dim.z),
+                    buf.size() / (dim.x*dim.z),
+                    buf.size() / (dim.x*dim.y)
+                );
+                assert(glm::all(glm::equal(chk, dim)) && "");
+                std::ignore = chk;
             };
 
             std::vector<uint8_t> glo_buf;
@@ -195,7 +210,9 @@ namespace voxelize {
             size_t prog = 0;
             benchmark::timer ms("time");
 
+#ifdef CMAKE_OMP_FOUND
             omp_set_num_threads(_num_threads);
+#endif
 #pragma omp parallel for
             for(size_t fid = 1; fid < _raw.size(); fid++) {
                 const int cur_perc = (int)((float)prog/_raw.size()*100);
@@ -216,7 +233,7 @@ namespace voxelize {
                 f_in.close();
                 check_buf(loc_buf);
 
-                for(int id = 0; id < loc_buf.size(); id++) {
+                for(size_t id = 0; id < loc_buf.size(); id++) {
                     if(loc_buf[id] == 0) continue;
 
 #pragma omp critical
@@ -255,7 +272,9 @@ namespace voxelize {
             size_t prog = 0;
             benchmark::timer ms("time");
 
+#ifdef CMAKE_OMP_FOUND
             omp_set_num_threads(_num_threads);
+#endif
 #pragma omp parallel for
             for(size_t fid = 0; fid < _rle.size(); fid++) {
                 const int cur_perc = (int)((float)prog/_rle.size()*100);
@@ -318,7 +337,7 @@ namespace voxelize {
                 // search tissue with highest value (highest == highest priority)
                 uint8_t winner_mat = 0;
 #pragma omp parallel for reduction (max: winner_mat)
-                for(int i = 0; i < _rle.size(); i++) {
+                for(size_t i = 0; i < _rle.size(); i++) {
                     const compress::rle<uint8_t> &r = _rle[i];
                     const uint8_t mat = *r[id];
                     winner_mat = smallest(target, mat, winner_mat);

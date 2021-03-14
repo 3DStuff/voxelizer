@@ -24,6 +24,13 @@ namespace voxelize {
         mesh::bbox<float> loc_bbox;
         mesh::bbox<float> glo_bbox;
 
+        project_cfg(
+            const cfg::shape_settings &settings, 
+            const mesh::polyhedron<float> &poly, 
+            const mesh::bbox<float> &lbbox = mesh::bbox<float>(), 
+            const mesh::bbox<float> &gbbox = mesh::bbox<float>()
+        ) : xml(settings), mesh(poly), loc_bbox(lbbox), glo_bbox(gbbox) {}
+
         //! clear mesh and rasterization data
         void clear() {
             mesh.clear();

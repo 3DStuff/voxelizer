@@ -8,7 +8,7 @@
 
 
 namespace rasterize {
-    template<typename base_t>
+    template<typename base_t, typename id_t>
     mesh::polyhedron<base_t> prepare_index_buffers(
         const mesh::polyhedron<base_t> &in_mesh, 
         const glm::ivec3 &in_scale,
