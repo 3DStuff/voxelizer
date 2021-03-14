@@ -11,6 +11,7 @@
 #include "merge.h"
 #include "timer.h"
 
+#include <cassert>
 #include <fstream>
 #include <vector>
 #include <map>

@@ -418,6 +418,7 @@ bool voxelizer<rasterizer_t>::load() {
         }
 
         const mesh::bbox<float> local_bbox = mesh.bounding_box();
+        assert(local_bbox.valid() && "voxelizer<rasterizer_t>::load() - Invalid bbox");
         _rasterizer_res.push_back(project_cfg(cfg, mesh, local_bbox));
 
         // calculate the gloabel project bounding box on the fly

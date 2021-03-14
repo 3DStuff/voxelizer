@@ -46,18 +46,21 @@ namespace voxelize {
         rle_merge(const cfg::xml_project &project_cfg, const mesh::bbox<float> &glob_bbox) 
         : _project_cfg(project_cfg), _glob_bbox(glob_bbox)
         {
-            _project_dir = _project_cfg.target_dir();
-            for (const auto & entry : std::filesystem::directory_iterator(_project_dir)) {
-                // skip merge targets
-                bool skip = false;
-                for(const auto &f : project_cfg.merge_targets()) {
-                    const std::string e = entry.path().string();
+            // does file belong to the project?
+            auto is_in_shapes = [&](const std::filesystem::path &p) {
+                for(const auto &f : project_cfg.shapes()) {
+                    const std::string e = p.string();
                     if(e.find(f._file_out) != e.npos) {
-                        skip = true;
+                        return true;
                     }
                 }
-                if(skip) {
-                    std::cout << "skip: " << entry.path().string() << std::endl;
+                return false;
+            };
+
+            _project_dir = _project_cfg.target_dir();
+            for (const auto & entry : std::filesystem::directory_iterator(_project_dir)) {
+                if(!is_in_shapes(entry)) {
+                    std::cout << "skip (does not belong to project): " << entry.path().string() << std::endl;
                     continue;
                 }
 
