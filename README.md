@@ -1,19 +1,12 @@
 # Added 15112020:
-Added feature to merge the bytewise output into one array. 
-Highest priority has always the greatest material ID.
-The resulting array includes a new voxel model with all the materials of project.
+Added voxel file merger (*.rle and *.raw files). 
+The priority can be assigned via the XML file (lower value equals higher priority).
 
-Works like this:
-| In1|   |   | In2|   |   | Out |   |
-|----|---|---|----|---|---|-----|---|
-| 1  | 0 |   | 3  | 2 |   | 3   | 2 |
-| 0  | 1 |   | 2  | 1 |   | 2   | 1 |
-
-For RLE files there is the option to export <code>efficiently</code>, 
-which is slow but saves memory while keeping the data RLE encoded the whole time.
 ```
-<merge file_out="merge_fast.rle|raw" type="fast"></merge>
-<merge file_out="merge_eff.rle|raw" type="efficient"></merge>
+<merge file_out="merge_fast.rle|raw" type="fast">
+    <mat id="1" prio="2"></mat>
+    <mat id="2" prio="1"></mat>
+</merge>
 ```
 # Added 10112020:
 Added a feature to the project .xml file. It is now possible to define several output formats.
