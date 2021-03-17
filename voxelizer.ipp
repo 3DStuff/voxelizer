@@ -1,28 +1,4 @@
 namespace {
-    inline int64_t flatten_2dindex(const glm::ivec2 &dim, const glm::ivec2 &pos, const array_order order) {
-        int64_t id = -1;
-        if (order == array_order::row_major) {
-            id = (int64_t)pos.y * dim.x + pos.x;
-        }
-        else if (order == array_order::column_major) {
-            id = (int64_t)pos.x * dim.y + pos.y;
-        }
-        assert(id >= 0 && "Index is invalid");
-        return id;
-    }
-
-    inline int64_t flatten_3dindex(const glm::ivec3 &dim, const glm::ivec3 &pos, const array_order order) {
-        int64_t id = -1;
-        if (order == array_order::row_major) {
-            id = (int64_t)pos.z * dim.x*dim.y + pos.y * dim.x + pos.x;
-        }
-        else if (order == array_order::column_major) {
-            id = (int64_t)pos.x * dim.y*dim.z + pos.y * dim.z + pos.z;
-        }
-        assert(id >= 0 && "Index is invalid");
-        return id;
-    }
-
     inline std::filesystem::path make_fname(const cfg::xml_project &prj, const project_cfg &cfg, const std::string &ext) {
         return  std::filesystem::path(prj.target_dir()) / (cfg.xml._file_out+ext);
     }
@@ -71,22 +47,39 @@ namespace {
             return 0;
         }
 
-        std::vector<uint8_t> get_voxels() const {
-            const size_t buf_size = (size_t)_dim_global_mesh_vox.x * _dim_global_mesh_vox.y * _dim_global_mesh_vox.z;
-            assert((buf_size < std::numeric_limits<uint32_t>::max()) && "to_bytes(): Array too huge");
+        std::vector<uint8_t> get_glo_buf() const {
+            const size_t buf_size = (size_t)dim_global_voxel().x * dim_global_voxel().y * dim_global_voxel().z;
+            assert((buf_size < std::numeric_limits<uint32_t>::max()) && "VoxelByte::get_glo_buf(): Array too huge");
             std::vector<uint8_t> buffer(buf_size, 0);
 
-            for(size_t z = 0; z < (size_t)dim_local_voxel().z; z++)
-            for(size_t y = 0; y < (size_t)dim_local_voxel().y; y++)
-            for(size_t x = 0; x < (size_t)dim_local_voxel().x; x++) {
+            for(int z = 0; z < dim_local_voxel().z; z++)
+            for(int y = 0; y < dim_local_voxel().y; y++)
+            for(int x = 0; x < dim_local_voxel().x; x++) {
                 // calculate position in project wide voxel model
                 // position in project unit
                 glm::ivec3 pos_vox = glm::ivec3(x,y,z) + _offset_vox;
                 // ensure boundaries are not exceeded
-                pos_vox = constrain(glm::ivec3(0), (_dim_global_mesh_vox - 1), pos_vox);
+                pos_vox = constrain(glm::ivec3(0), (dim_global_voxel()-1), pos_vox);
 
-                int64_t id = flatten_3dindex(_dim_global_mesh_vox, pos_vox, _cfg.xml._byte_order);
+                int64_t id = flatten_3dindex(dim_global_voxel(), pos_vox, _cfg.xml._byte_order);
                 buffer[id] = get_voxel(glm::ivec3(x,y,z));
+            }
+            return buffer;
+        }
+
+        std::vector<uint8_t> get_loc_buf() const {
+            const size_t buf_size = (size_t)dim_local_voxel().x * dim_local_voxel().y * dim_local_voxel().z;
+            assert((buf_size < std::numeric_limits<uint32_t>::max()) && "VoxelByte::get_loc_buf(): Array too huge");
+            std::vector<uint8_t> buffer(buf_size, 0);
+
+            for(int z = 0; z < dim_local_voxel().z; z++)
+            for(int y = 0; y < dim_local_voxel().y; y++)
+            for(int x = 0; x < dim_local_voxel().x; x++) {
+                // calculate position in project wide voxel model
+                // position in project unit
+                const glm::ivec3 pos_vox = glm::ivec3(x,y,z);
+                int64_t id = flatten_3dindex(dim_local_voxel(), pos_vox, _cfg.xml._byte_order);
+                buffer[id] = get_voxel(pos_vox);
             }
             return buffer;
         }
@@ -107,9 +100,9 @@ void voxelizer<rasterizer_t>::to_fs_obj(const project_cfg &cfg, const raster_out
     std::map<stl::face, size_t> shell_buf;
 
     const glm::vec3 offset = glm::round(cfg.loc_bbox._min - cfg.glo_bbox._min);
-    for(int x = 0; x < (int)raster_out._arr_dim.x; x++)
-    for(int y = 0; y < (int)raster_out._arr_dim.y; y++)
-    for(int z = 0; z < (int)raster_out._arr_dim.z; z++) {
+    for(int x = 0; x < raster_out._arr_dim.x; x++)
+    for(int y = 0; y < raster_out._arr_dim.y; y++)
+    for(int z = 0; z < raster_out._arr_dim.z; z++) {
         constexpr size_t faces_per_cube = 12;
         using cube_t = std::array<stl::face, faces_per_cube>;
         if(raster_out._voxels[x][y][z] == voxel_type::shell) {
@@ -192,9 +185,9 @@ void voxelizer<rasterizer_t>::to_fs_stl(const project_cfg &cfg, const raster_out
     // now write faces of hull cubes into stl
     const glm::vec3 offset = glm::round(cfg.loc_bbox._min - cfg.glo_bbox._min);
     std::map<stl::face, size_t> write_buf;
-    for(int x = 0; x < (int)raster_out._arr_dim.x; x++)
-    for(int y = 0; y < (int)raster_out._arr_dim.y; y++)
-    for(int z = 0; z < (int)raster_out._arr_dim.z; z++) {
+    for(int x = 0; x < raster_out._arr_dim.x; x++)
+    for(int y = 0; y < raster_out._arr_dim.y; y++)
+    for(int z = 0; z < raster_out._arr_dim.z; z++) {
         if(raster_out._voxels[x][y][z] != voxel_type::shell) continue;
         constexpr size_t faces_per_cube = 12;
         using cube_t = std::array<stl::face, faces_per_cube>;
@@ -230,7 +223,7 @@ void voxelizer<rasterizer_t>::to_fs_stl(const project_cfg &cfg, const raster_out
 template <typename rasterizer_t> 
 std::vector<uint8_t> voxelizer<rasterizer_t>::to_bytes(const project_cfg &cfg, const raster_out_t &raster_out) const {
     VoxelByte byte(cfg, raster_out);
-    return byte.get_voxels();
+    return byte.get_glo_buf();
 }
 
 template <typename rasterizer_t> 
@@ -239,37 +232,28 @@ void voxelizer<rasterizer_t>::to_fs_bytes(const project_cfg &cfg, const raster_o
     std::filesystem::path p = make_fname(_project_cfg, cfg, "raw");
     benchmark::timer t("voxelizer::to_fs_bytes() - " + p.string() + " export took");
 
-    // we write in small chunks and never create a huge array
-    // saves memory and avoids slow writes
-    std::ofstream f(p, std::ofstream::binary);
     const VoxelByte byte(cfg, raster_out);
     const glm::ivec3 dim_glo = byte.dim_global_voxel();
     const glm::ivec3 dim_loc = byte.dim_local_voxel();
     const glm::ivec3 ofs = byte.loc2glob_offset_voxel();
+    std::vector<uint8_t> buf = byte.get_loc_buf();
 
-    for(size_t z = 0; z < (size_t)dim_glo.z; z++) {
-        std::vector<uint8_t> buf(dim_glo.x*dim_glo.y, 0);
-        for(size_t y = 0; y < (size_t)dim_glo.y; y++)
-        for(size_t x = 0; x < (size_t)dim_glo.x; x++) {
-            const glm::ivec3 pos_vox = glm::ivec3(x,y,z) - ofs;
-            // voxel in local boundary?
-            const bool voxel_in = glm::all(glm::greaterThanEqual(pos_vox, glm::ivec3(0))) && glm::all(glm::lessThan(pos_vox, dim_loc));
-            const uint8_t mat = voxel_in ? byte.get_voxel(pos_vox) : 0;
-            const int64_t loc_id = flatten_2dindex(dim_glo.xy(), glm::ivec2(x,y), cfg.xml._byte_order);
-            buf[loc_id] = mat;
-        }
-        f.write((char*)&buf[0], buf.size());
-    }
+    // we write in small chunks and never create a huge array
+    // saves memory and avoids slow writes
+    std::ofstream f(p, std::ofstream::binary);
+    f.write((char*)&buf[0], sizeof(uint8_t) * buf.size());
     f.close();
 
     // generate a text file whichs stores some additional info about the file
     p.replace_extension("info"); // replace file extension with info
     std::ofstream f_size_info(p.string(), std::ofstream::out);
-    f_size_info << "[xyz]: " << dim_glo.x << " " << dim_glo.y << " " << dim_glo.z << "\n";
-    const std::string byte_order = cfg.xml._byte_order == array_order::row_major ? "row major" : "column major";
-    f_size_info << "[byte order]: " << byte_order << "\n";
-    f_size_info << "[interior voxel value]: " << cfg.xml._material_inside << "\n";
-    f_size_info << "[shell voxel value]: " << cfg.xml._material_shell << "\n";
+    f_size_info << "[loc] " << dim_loc.x << " " << dim_loc.y << " " << dim_loc.z << "\n";
+    f_size_info << "[glo] " << dim_glo.x << " " << dim_glo.y << " " << dim_glo.z << "\n";
+    f_size_info << "[ofs] " << ofs.x << " " << ofs.y << " " << ofs.z << "\n";
+    const std::string byte_order = cfg.xml._byte_order == array_order::row_major ? "row_major" : "column_major";
+    f_size_info << "[order] " << byte_order << "\n";
+    f_size_info << "[interior] " << cfg.xml._material_inside << "\n";
+    f_size_info << "[shell] " << cfg.xml._material_shell << "\n";
     f_size_info.close();
 }
 
@@ -293,31 +277,20 @@ void voxelizer<rasterizer_t>::to_fs_rle(const project_cfg &cfg, const raster_out
 
 #pragma omp parallel
 {
-    std::vector<chunk_t> loc_buf;
+    std::vector<chunk_t> loc_buf = {{ 0, 0 }};
 #pragma omp for nowait schedule(static)
-    for(size_t z = 0; z < (size_t)dim_glo.z; z++)
-    for(size_t y = 0; y < (size_t)dim_glo.y; y++)
-    for(size_t x = 0; x < (size_t)dim_glo.x; x++) {
-        const glm::ivec3 pos_vox = glm::ivec3(x,y,z) - ofs;
-        // voxel in local boundary?
-        const bool voxel_in = glm::all(glm::greaterThanEqual(pos_vox, glm::ivec3(0))) && glm::all(glm::lessThan(pos_vox, dim_loc));
-        const uint8_t mat = voxel_in ? byte.get_voxel(pos_vox) : 0;
-        
-        // init the array
-        if(loc_buf.empty()) {
+    for(int z = 0; z < dim_loc.z; z++)
+    for(int y = 0; y < dim_loc.y; y++)
+    for(int x = 0; x < dim_loc.x; x++) {
+        // either increase counter or append new chunk
+        const uint8_t &mat = byte.get_voxel(glm::ivec3(x,y,z));
+        if(loc_buf.back().second != mat) {
             loc_buf.push_back({1, mat});
             continue;
         }
-
-        // either increase counter or append new chunk
-        auto &last = loc_buf.back();
-        if(last.second == mat) {
-            last.first++;
-        }
-        else {
-            loc_buf.push_back({1, mat});
-        }
+        loc_buf.back().first++;
     }
+
     int num_threads = 1;
 #ifdef CMAKE_OMP_FOUND
     num_threads = omp_get_num_threads();
@@ -328,9 +301,16 @@ void voxelizer<rasterizer_t>::to_fs_rle(const project_cfg &cfg, const raster_out
         buf.insert(buf.end(), loc_buf.begin(), loc_buf.end());
     }
 }
+    benchmark::timer rle_t("voxelizer::to_fs_rle() - " + p.string() + " rle encoding took");
     rle.encode(buf);
+    // rle meta information
+    const std::vector<int> meta = { 
+        dim_glo.x, dim_glo.y, dim_glo.z, // size whole array
+        dim_loc.x, dim_loc.y, dim_loc.z, // bbox of particular shape
+        ofs.x, ofs.y, ofs.z,             // offset of the particular shape in whole array
+        (int)cfg.xml._byte_order
+    };
 
-    const std::vector<size_t> meta = { (size_t)dim_glo.x, (size_t)dim_glo.y, (size_t)dim_glo.z, (size_t)cfg.xml._byte_order};
     compress::rle_io rle_io(rle, meta);
     rle_io.to_file(p.string());
 }
@@ -349,17 +329,12 @@ void voxelizer<rasterizer_t>::to_fs_vox(const project_cfg &cfg, const raster_out
     for(int x = 0; x < vox_size.x; x++)
     for(int y = 0; y < vox_size.y; y++)
     for(int z = 0; z < vox_size.z; z++) {
-        uint8_t v = raster_out._voxels[x][y][z];
-        switch(v) {
-            case voxel_type::shell:
-                chunk_xyzi.data.push_back(vox::xyzi_t(x, y, z, cfg.xml._material_shell));
-                break;
-            case voxel_type::interior:
-                chunk_xyzi.data.push_back(vox::xyzi_t(x, y, z, cfg.xml._material_inside));
-                break;
-            default:
-                break;
-        };
+        if(raster_out._voxels[x][y][z] == voxel_type::shell) {
+            chunk_xyzi.data.push_back(vox::xyzi_t(x, y, z, cfg.xml._material_shell));
+        }
+        if(raster_out._voxels[x][y][z] == voxel_type::interior) {
+            chunk_xyzi.data.push_back(vox::xyzi_t(x, y, z, cfg.xml._material_inside));
+        }
     }
     
     chunk_main.models.push_back({chunk_size, chunk_xyzi});

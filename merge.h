@@ -6,8 +6,10 @@
 #include <limits>
 #include <filesystem>
 #include <vector>
+#include <regex>
 #include <fstream>
 
+#include "flatten_index.h"
 #include "xml_config.h"
 #include "enums.h"
 #include "polyhedron/glm_ext/glm_extensions.h"
@@ -16,13 +18,51 @@
 #include "timer.h"
 
 
+struct file_header {
+    glm::ivec3 glo_dim;
+    glm::ivec3 loc_dim;
+    glm::ivec3 loc_ofs;
+    int order;
+
+    file_header() = default;
+    file_header(const glm::ivec3 &glo, const glm::ivec3 &loc, const glm::ivec3 &ofs, const int ord) 
+    : glo_dim(glo), loc_dim(loc), loc_ofs(ofs), order(ord) {}
+    file_header(const std::vector<int> &v) {
+        assert(v.size() == 10);
+        glo_dim = {v[0], v[1], v[2]};
+        loc_dim = {v[3], v[4], v[5]};
+        loc_ofs = {v[6], v[7], v[8]};
+        order = v[9];
+    }
+
+    std::vector<int> to_arr() const {
+        return {
+            glo_dim.x, glo_dim.y, glo_dim.z, 
+            loc_dim.x, loc_dim.y, loc_dim.z, 
+            loc_ofs.x, loc_ofs.y, loc_ofs.z, 
+            order
+        };
+    }
+};
+
+struct raw_file {
+    std::string             raw_file = "";
+    file_header             raw_info;
+};
+
+template <typename base_t>
+struct rle_file {
+    compress::rle<base_t>   rle_data;
+    file_header             rle_info;
+};
+
 namespace {
-    inline void write_info(std::string file, const glm::ivec3 &dim_glo, int byte_order) {
+    inline void write_info(std::string file, const file_header &h) {
         // generate a text file whichs stores some additional info about the file
         std::ofstream f_size_info(file, std::ofstream::out);
-        f_size_info << "[xyz]: " << dim_glo.x << " " << dim_glo.y << " " << dim_glo.z << "\n";
-        const std::string s_byte_order = byte_order == array_order::row_major ? "row major" : "column major";
-        f_size_info << "[byte order]: " << s_byte_order << "\n";
+        f_size_info << "[xyz] " << h.glo_dim.x << " " << h.glo_dim.y << " " << h.glo_dim.z << "\n";
+        const std::string s_byte_order = (array_order)h.order == array_order::row_major ? "row_major" : "column_major";
+        f_size_info << "[byte order] " << s_byte_order << "\n";
         f_size_info.close();
     }
 };
@@ -31,13 +71,17 @@ namespace voxelize {
     template<typename base_t>
     class rle_merge {
     private:
+        std::map<std::string, int> byte_order = {
+            { "row_major", (int)array_order::row_major }, 
+            { "column_major", (int)array_order::column_major }, 
+        };
+
         const cfg::xml_project &_project_cfg;
         const mesh::bbox<float> &_glob_bbox;
         std::string _project_dir;
 
-        std::vector<std::vector<size_t>> _meta;
-        std::vector<compress::rle<base_t>> _rle;
-        std::vector<std::string> _raw;
+        std::vector<rle_file<base_t>> _rle;
+        std::vector<raw_file> _raw;
 
         int _num_threads = 1;
         int _max_threads = 1;
@@ -68,28 +112,67 @@ namespace voxelize {
                     std::cout << "add: " << entry.path() << std::endl; 
                     compress::rle_io<base_t> rle_inp;
                     rle_inp.from_file(entry.path().string());
-                    _rle.push_back(rle_inp.get());
-                    _meta.push_back(rle_inp.meta());
+                    _rle.push_back( { rle_inp.get(), file_header(rle_inp.meta()) } );
                 }
+                // raw files have an extra info file
                 if(".raw" == entry.path().extension()) {
-                    _raw.push_back(entry.path().string());      
+                    auto raw_f = entry.path();
+                    auto info_f = entry.path(); 
+                    info_f.replace_extension(".info");
+                    assert(std::filesystem::exists(info_f));
+
+                    // parse the info file
+                    std::regex rglo("^\\[glo\\]\\s*([0-9]+)\\s*([0-9]+)\\s*([0-9]+)$");
+                    std::regex rloc("^\\[loc\\]\\s*([0-9]+)\\s*([0-9]+)\\s*([0-9]+)$");
+                    std::regex rofs("^\\[ofs\\]\\s*([0-9]+)\\s*([0-9]+)\\s*([0-9]+)$");
+                    std::regex rorder("^\\[order\\]\\s*([A-z]+)$");
+
+                    std::ifstream f(info_f.string());
+                    std::string line;
+                    file_header raw_info;
+                    while(getline(f, line)){ //read data from file object and put it into string.
+                        std::smatch mglo, mloc, mofs, morder;
+                        std::regex_match(line, mglo, rglo);
+                        std::regex_match(line, mloc, rloc);
+                        std::regex_match(line, mofs, rofs);
+                        std::regex_match(line, morder, rorder);
+                        if(mglo.size() == 4) {
+                            raw_info.glo_dim.x = std::stoi(mglo[1]);
+                            raw_info.glo_dim.y = std::stoi(mglo[2]);
+                            raw_info.glo_dim.z = std::stoi(mglo[3]);
+                        }
+                        if(mloc.size() == 4) {
+                            raw_info.loc_dim.x = std::stoi(mloc[1]);
+                            raw_info.loc_dim.y = std::stoi(mloc[2]);
+                            raw_info.loc_dim.z = std::stoi(mloc[3]);
+                        }
+                        if(mofs.size() == 4) {
+                            raw_info.loc_ofs.x = std::stoi(mofs[1]);
+                            raw_info.loc_ofs.y = std::stoi(mofs[2]);
+                            raw_info.loc_ofs.z = std::stoi(mofs[3]);
+                        }
+                        if(morder.size() == 2) {
+                            const std::string sorder = morder[1];
+                            raw_info.order = byte_order[sorder];
+                        }
+                    }
+                    std::cout << raw_f << "\n";
+                    _raw.push_back( { raw_f.string(), raw_info } );
                 }
             }
 
             // rle sanity checks
-            if(!_rle.empty()) assert(_meta.begin()->size() == 4 && "rle_merge::run(): *.rle files invalid :(");
-            auto ritr = _rle.begin();
-            while(ritr != _rle.end()) {
-                assert(ritr->data()._uncompressed_size == _rle.begin()->data()._uncompressed_size && "rle_merge::run(): rle files are incompatible :(");
-                ritr++;
-            }
-            auto meta_first = _meta.begin();
-            auto mitr = _meta.begin();
-            while(mitr != _meta.end()) {
-                const bool dim_equal = std::equal(meta_first->begin(), meta_first->end(), mitr->begin());
-                assert(dim_equal && "rle_merge::run(): rle files are incompatible :(");
-                std::ignore = dim_equal;
-                mitr++;
+            if(!_rle.empty()) {
+                auto &mf = _rle[0].rle_info;
+                std::ignore = mf;
+                for(const auto &m : _rle) {
+                    const auto &cur_info = m.rle_info;
+                    std::ignore = cur_info;
+                    assert(mf.glo_dim.x == cur_info.glo_dim.x && "rle_merge::run(): *.rle files invalid :("); // glo bbox x
+                    assert(mf.glo_dim.y == cur_info.glo_dim.y && "rle_merge::run(): *.rle files invalid :("); // glo bbox y
+                    assert(mf.glo_dim.z == cur_info.glo_dim.z && "rle_merge::run(): *.rle files invalid :("); // glo bbox z 
+                    assert(mf.order == cur_info.order && "rle_merge::run(): *.rle files invalid :("); // order
+                }
             }
 
             // estimate maximum number of threads
@@ -151,13 +234,10 @@ namespace voxelize {
                     std::cerr << "Merging only possible for binary files" << std::endl;
                     return;
                 }
-                if(target._type == "fast") {
-                    if(run_fast_raw(target)) continue;
-                    if(run_fast_rle(target)) continue;
-                }
-                if(target._type == "efficient") {
-                    if(run_efficient_rle(target)) continue;
-                }
+
+                if(run_fast_rle(target)) continue;
+                if(run_efficient_rle(target)) continue;
+                if(run_fast_raw(target)) continue;
             }
         }
 
@@ -179,190 +259,202 @@ namespace voxelize {
             return pf < ps ? first : second;
         }
 
-    protected:   
+    private:
+        bool save_rle_fast(const cfg::merge_target &target, const file_header &header, const std::vector<uint8_t> &buf) const {
+            const file_header new_header = file_header(header.glo_dim, header.glo_dim, glm::ivec3(0), header.order);
+            if(target._file_ext_out.count("rle")) {
+                std::string rle_outf = (std::filesystem::path(_project_dir) / (target._file_out + "rle")).string();
+                compress::rle rle_out(buf);
+                compress::rle_io rio(rle_out, new_header.to_arr());
+                rio.to_file(rle_outf);
+                return true;
+            }
+            return false;
+        }
+        bool save_raw_fast(const cfg::merge_target &target, const file_header &header, const std::vector<uint8_t> &buf) const {
+            const file_header new_header = file_header(header.glo_dim, header.glo_dim, glm::ivec3(0), header.order);
+            if(target._file_ext_out.count("raw")) {
+                std::string raw_outf = (std::filesystem::path(_project_dir) / (target._file_out + "raw")).string();
+                std::ofstream fout(raw_outf, std::ofstream::binary);
+                fout.write((char*)&buf[0], buf.size());
+                fout.close();
+                std::string raw_infof = (std::filesystem::path(_project_dir) / (target._file_out + "info")).string();
+                write_info(raw_infof, new_header);
+                return true;
+            }
+            return false;
+        }
+
+#define paral_prog_decl\
+    int perc = 0;\
+    size_t prog = 0;\
+    benchmark::timer ms("time");\
+    _Pragma("omp parallel for")
+
+#define paral_prog_report(arr)\
+    const int cur_perc = (int)((float)(prog+1)/arr.size()*100);\
+    if(perc != cur_perc)\
+    {\
+        perc = cur_perc;\
+        _Pragma("omp critical")\
+        {\
+            std::cout << "progress: " << perc << "/" << 100 << " ";\
+            ms.reset();\
+        }\
+    }\
+    _Pragma("omp atomic")\
+    prog++;
+
+#define paral_crit\
+    _Pragma("omp critical")
+
         bool run_fast_raw(const cfg::merge_target &target) {
             if(_raw.size() < 2) return false;
             if(_num_threads < 1) return false;
             benchmark::timer t("run_fast_raw::run() - merge took");
 
-            // get meta
-            const auto shape = *_project_cfg.shapes().begin();
-            const glm::ivec3 dim = glm::ceil(_glob_bbox.dim() / shape._voxel_size);
-            const std::vector<size_t> meta = { (size_t)dim.x, (size_t)dim.y, (size_t)dim.z, (size_t)shape._byte_order };
+            const auto &rle_info = _raw[0].raw_info;
+            std::vector<uint8_t> glo_buf((size_t)rle_info.glo_dim.x*rle_info.glo_dim.y*rle_info.glo_dim.z, 0);
 
-            auto check_buf = [&](const std::vector<uint8_t> &buf){
-                assert(buf.size() % dim.x == 0 && "");
-                assert(buf.size() % dim.y == 0 && "");
-                assert(buf.size() % dim.z == 0 && "");
-                glm::ivec3 chk(
-                    buf.size() / (dim.y*dim.z),
-                    buf.size() / (dim.x*dim.z),
-                    buf.size() / (dim.x*dim.y)
-                );
-                assert(glm::all(glm::equal(chk, dim)) && "");
-                std::ignore = chk;
-            };
-
-            std::vector<uint8_t> glo_buf;
-            auto f = std::ifstream(*_raw.begin(), std::ofstream::binary);
-            std::copy(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>(), std::back_inserter(glo_buf));
-            f.close();
-            check_buf(glo_buf);
-
-            int perc = 0;
-            size_t prog = 0;
-            benchmark::timer ms("time");
-
-#ifdef CMAKE_OMP_FOUND
-            omp_set_num_threads(_num_threads);
-#endif
-#pragma omp parallel for
-            for(size_t fid = 1; fid < _raw.size(); fid++) {
-                const int cur_perc = (int)((float)prog/_raw.size()*100);
-                if(perc != cur_perc) {
-                    perc = cur_perc;
-#pragma omp critical
-{
-                    std::cout << "progress: " << perc << "/" << 100 << " ";
-                    ms.reset();
-}
-                }
-#pragma omp atomic
-                prog++;
-
+paral_prog_decl
+            for(size_t i = 0; i < _raw.size(); i++) {
+paral_prog_report(_raw)
                 std::vector<uint8_t> loc_buf;
-                std::ifstream f_in = std::ifstream(_raw[fid], std::ofstream::binary);
+                const std::string &f_path = _raw[i].raw_file;
+                std::ifstream f_in = std::ifstream(f_path, std::ofstream::binary);
                 std::copy(std::istreambuf_iterator<char>(f_in), std::istreambuf_iterator<char>(), std::back_inserter(loc_buf));
                 f_in.close();
-                check_buf(loc_buf);
 
-                for(size_t id = 0; id < loc_buf.size(); id++) {
-                    if(loc_buf[id] == 0) continue;
+                const auto &meta = _raw[i].raw_info;
+                const glm::ivec3 loc_bbox = meta.loc_dim;
+                const glm::ivec3 loc_ofs = meta.loc_ofs;
+                const array_order order = (array_order)meta.order;
 
-#pragma omp critical
-                    glo_buf[id] = smallest(target, glo_buf[id], loc_buf[id]);
+                const size_t loc_size = (size_t)loc_bbox.x*loc_bbox.y*loc_bbox.z;
+                assert(loc_buf.size() == loc_size && "run_fast_raw() - size not matching");
+                std::ignore = loc_size;
+
+                for(int z = 0; z < loc_bbox.z; z++)
+                for(int y = 0; y < loc_bbox.y; y++)
+                for(int x = 0; x < loc_bbox.x; x++) {
+                    const glm::ivec3 loc_pos = glm::ivec3(x,y,z);
+                    const int64_t lid = flatten_3dindex(loc_bbox, loc_pos, order);
+                    if(loc_buf[lid] == 0) continue;
+
+                    const glm::ivec3 glo_pos = loc_pos + loc_ofs;
+                    const int64_t gid = flatten_3dindex(rle_info.glo_dim, glo_pos, order);
+paral_crit
+                    glo_buf[gid] = smallest(target, glo_buf[gid], loc_buf[lid]);
                 }
             }
 
-            if(target._file_ext_out.count("rle")) {
-                std::string rle_outf = (std::filesystem::path(_project_dir) / (target._file_out + "rle")).string();
-                compress::rle rle_out(glo_buf);
-                compress::rle_io rio(rle_out, meta);
-                rio.to_file(rle_outf);
-            }
-            if(target._file_ext_out.count("raw")) {
-                std::string raw_outf = (std::filesystem::path(_project_dir) / (target._file_out + "raw")).string();
-                std::ofstream fout(raw_outf, std::ofstream::binary);
-                fout.write((char*)&glo_buf[0], glo_buf.size());
-                fout.close();
-                // generate info file
-                std::string raw_infof = (std::filesystem::path(_project_dir) / (target._file_out + "info")).string();
-                write_info(raw_infof, {meta[0], meta[1], meta[2]}, meta[3]);
-            }
+            std::cout << "save file" << std::endl;
+            save_rle_fast(target, rle_info, glo_buf);
+            save_raw_fast(target, rle_info, glo_buf);
             return true;
         }
 
         bool run_fast_rle(const cfg::merge_target &target) {
+            if(target._type != "fast") return false;
             if(_rle.size() < 2) return false;
             if(_num_threads < 1) return false;
             benchmark::timer t("run_fast_rle::run() - merge took");
 
-            const auto meta_first = _meta.begin();
-            const size_t num_voxels = (size_t)meta_first->at(0) * meta_first->at(1) * meta_first->at(2);
-            std::vector<uint8_t> glo_buf(num_voxels, 0);
+            const auto &rle_info = _rle[0].rle_info;
+            std::vector<uint8_t> glo_buf((size_t)rle_info.glo_dim.x*rle_info.glo_dim.y*rle_info.glo_dim.z, 0);
 
-            int perc = 0;
-            size_t prog = 0;
-            benchmark::timer ms("time");
+paral_prog_decl
+            for(size_t i = 0; i < _rle.size(); i++) {
+paral_prog_report(_rle)
+                const auto &rle = _rle[i].rle_data;
+                const auto &meta = _rle[i].rle_info;
+                const glm::ivec3 loc_bbox = meta.loc_dim;
+                const glm::ivec3 loc_ofs = meta.loc_ofs;
+                const array_order order = (array_order)meta.order;
 
-#ifdef CMAKE_OMP_FOUND
-            omp_set_num_threads(_num_threads);
-#endif
-#pragma omp parallel for
-            for(size_t fid = 0; fid < _rle.size(); fid++) {
-                const int cur_perc = (int)((float)prog/_rle.size()*100);
-                if(perc != cur_perc) {
-                    perc = cur_perc;
-#pragma omp critical
-{
-                    std::cout << "progress: " << perc << "/" << 100 << " ";
-                    ms.reset();
-}
-                }
-#pragma omp atomic
-                prog++;
+                const std::vector<uint8_t> loc_buf = rle.decode();
+                const size_t loc_size = (size_t)loc_bbox.x*loc_bbox.y*loc_bbox.z;
+                assert(loc_buf.size() == loc_size && "run_fast_rle() - size not matching");
+                std::ignore = loc_size;
 
-                const compress::rle<uint8_t> &r = _rle[fid];
-                const std::vector<uint8_t> loc_buf = r.decode();
-                for(size_t id = 0; id < num_voxels; id++) {
-                    if(loc_buf[id] == 0) continue;
-#pragma omp critical
-                    glo_buf[id] = smallest(target, glo_buf[id], loc_buf[id]);
+                for(int z = 0; z < loc_bbox.z; z++)
+                for(int y = 0; y < loc_bbox.y; y++)
+                for(int x = 0; x < loc_bbox.x; x++) {
+                    const glm::ivec3 loc_pos = glm::ivec3(x,y,z);
+                    const int64_t lid = flatten_3dindex(loc_bbox, loc_pos, order);
+                    if(loc_buf[lid] == 0) continue;
+
+                    const glm::ivec3 glo_pos = loc_pos + loc_ofs;
+                    const int64_t gid = flatten_3dindex(rle_info.glo_dim, glo_pos, order);
+paral_crit
+                    glo_buf[gid] = smallest(target, glo_buf[gid], loc_buf[lid]);
                 }
             }
 
-            if(target._file_ext_out.count("rle")) {
-                std::string rle_outf = (std::filesystem::path(_project_dir) / (target._file_out + "rle")).string();
-                compress::rle rle_out(glo_buf);
-                compress::rle_io rio(rle_out, *meta_first);
-                rio.to_file(rle_outf);
-            }
-            if(target._file_ext_out.count("raw")) {
-                std::string raw_outf = (std::filesystem::path(_project_dir) / (target._file_out + "raw")).string();
-                std::ofstream fout(raw_outf, std::ofstream::binary);
-                fout.write((char*)&glo_buf[0], glo_buf.size());
-                fout.close();
-                // generate info file
-                std::string raw_infof = (std::filesystem::path(_project_dir) / (target._file_out + "info")).string();
-                const glm::ivec3 dim = {meta_first->at(0), meta_first->at(1), meta_first->at(2)};
-                write_info(raw_infof, dim, meta_first->at(3));
-            }
+            std::cout << "save file" << std::endl;
+            save_rle_fast(target, rle_info, glo_buf);
+            save_raw_fast(target, rle_info, glo_buf);
             return true;
         }
 
+#define lin_prog_decl\
+    int prog = 0;\
+    int perc = 0;\
+    size_t num_voxels = (size_t)rle_info.glo_dim.x*rle_info.glo_dim.y*rle_info.glo_dim.z;\
+    benchmark::timer ms("time");\
+
+#define lin_prog_report\
+    const int cur_perc = (int)((float)prog++/num_voxels*100);\
+    if(perc != cur_perc) {\
+        perc = cur_perc;\
+        std::cout << "progress: " << perc << "/" << 100 << " ";\
+        ms.reset();\
+    }
+
         bool run_efficient_rle(const cfg::merge_target &target) const {
+            if(target._type != "efficient") return false;
             if(_rle.size() < 2) return false;
             benchmark::timer t("run_efficient_rle::run() - merge took");
 
-            const auto meta_first = _meta.begin();
-            const size_t num_voxels = (size_t)meta_first->at(0) * meta_first->at(1) * meta_first->at(2);
             compress::rle<uint8_t> rle_out;
+            const auto &rle_info = _rle[0].rle_info;
 
-            int perc = 0;
-            benchmark::timer ms("time");
-            for(size_t id = 0; id < num_voxels; id++) {
-                const int cur_perc = (int)((float)id/num_voxels*100);
-                if(perc != cur_perc) {
-                    perc = cur_perc;
-                    std::cout << "progress: " << perc << "/" << 100 << " ";
-                    ms.reset();
-                }
-                // search tissue with highest value (highest == highest priority)
+lin_prog_decl
+            for(int z = 0; z < rle_info.glo_dim.z; z++)
+            for(int y = 0; y < rle_info.glo_dim.y; y++)
+            for(int x = 0; x < rle_info.glo_dim.x; x++) {
+lin_prog_report
+                const glm::ivec3 glo_pos = {x,y,z};
+                
                 uint8_t winner_mat = 0;
 #pragma omp parallel for reduction (max: winner_mat)
                 for(size_t i = 0; i < _rle.size(); i++) {
-                    const compress::rle<uint8_t> &r = _rle[i];
-                    const uint8_t mat = *r[id];
+                    const auto &rle = _rle[i].rle_data;
+                    const auto &meta = _rle[i].rle_info;
+
+                    const glm::ivec3 &loc_bbox = meta.loc_dim;
+                    const glm::ivec3 &loc_ofs = meta.loc_ofs;
+                    const glm::ivec3 loc_pos = glo_pos - loc_ofs;
+
+                    if(glm::any(glm::lessThan(loc_pos, glm::ivec3(0)))) continue;
+                    if(glm::any(glm::greaterThanEqual(loc_pos, loc_bbox))) continue;
+
+                    const int64_t lid = flatten_3dindex(loc_bbox, loc_pos, (array_order)meta.order);
+                    const uint8_t mat = *rle[lid];
                     winner_mat = smallest(target, mat, winner_mat);
                 }
                 rle_out << winner_mat;
             }
 
+            std::cout << "save file" << std::endl;
+            const file_header head = file_header(rle_info.glo_dim, rle_info.glo_dim, glm::ivec3(0), rle_info.order);
             if(target._file_ext_out.count("rle")) {
                 std::string rle_outf = (std::filesystem::path(_project_dir) / (target._file_out + "rle")).string();
-                compress::rle_io rio(rle_out, *meta_first);
+                compress::rle_io rio(rle_out, head.to_arr());
                 rio.to_file(rle_outf);
             }
             if(target._file_ext_out.count("raw")) {
-                std::string raw_outf = (std::filesystem::path(_project_dir) / (target._file_out + "raw")).string();
-                std::ofstream f(raw_outf, std::ofstream::binary);
-                std::vector<uint8_t> buf = rle_out.decode();
-                f.write((char*)&buf[0], buf.size());
-                f.close();
-                // generate info file
-                std::string raw_infof = (std::filesystem::path(_project_dir) / (target._file_out + "info")).string();
-                const glm::ivec3 dim = {meta_first->at(0), meta_first->at(1), meta_first->at(2)};
-                write_info(raw_infof, dim, meta_first->at(3));
+                save_raw_fast(target, rle_info, rle_out.decode());
             }
             return true;
         }

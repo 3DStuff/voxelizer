@@ -10,6 +10,7 @@
 #include "rle/rle_io.h"
 #include "merge.h"
 #include "timer.h"
+#include "flatten_index.h"
 
 #include <cassert>
 #include <fstream>

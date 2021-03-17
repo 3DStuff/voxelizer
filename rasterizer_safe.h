@@ -18,24 +18,24 @@ namespace rasterize {
     //! buffer for the intersections
     //! used by rasterize::all_rle 
     //! for memory optimization
-    template <typename data_t>
+    template <typename integral_t>
     class intersections {
         // [][][] operator madness
-        using parent_t = intersections<data_t>;
+        using parent_t = intersections<integral_t>;
         struct proxy_i {
             struct proxy_ii {
-                int _x;
-                int _y;
+                integral_t _x;
+                integral_t _y;
                 const parent_t *_p = nullptr;
-                proxy_ii(const parent_t *p, const int x, const int y) : _x(x), _y(y), _p(p) {}
-                uint8_t operator[] (const int z) const {
+                proxy_ii(const parent_t *p, const integral_t x, const integral_t y) : _x(x), _y(y), _p(p) {}
+                uint8_t operator[] (const integral_t z) const {
                     return _p->get(_x, _y, z);
                 }
             };
-            int _x;
+            integral_t _x;
             const parent_t *_p = nullptr;
-            proxy_i(const parent_t *p, const int x) : _x(x), _p(p) {}
-            proxy_ii operator[] (const int y) const {
+            proxy_i(const parent_t *p, const integral_t x) : _x(x), _p(p) {}
+            proxy_ii operator[] (const integral_t y) const {
                 return proxy_ii(_p, _x, y);
             }
         };
@@ -51,7 +51,7 @@ namespace rasterize {
             xy = buf_t(dim.x, dim.y, 0);
         }
         
-        using buf_t = buffer3d<data_t>;
+        using buf_t = buffer3d<integral_t>;
         //! xy plane
         buf_t xy;
         //! yz plane
@@ -65,11 +65,13 @@ namespace rasterize {
             xz.clear();
         }
         
-        uint8_t get(const int x, const int y, const int z) const {
+        uint8_t get(const integral_t x, const integral_t y, const integral_t z) const {
             // check whether a position is in between intersections
-            auto is_in = [](const auto &arr, const int pos) {
-                if(arr.size() == 0) return false;
-                if(arr.size() == 1) return false;
+            auto is_in = [](const auto &arr, const integral_t pos) {
+                if(arr.size() < 2) {
+                    return false;
+                }
+
                 bool is_out = arr.size() % 2 == 0 ? true : false;                               
                 for(size_t i = 0; i < arr.size()-1; i++) {   
                     if(pos > arr[i] && pos < arr[i+1]) {
@@ -79,48 +81,36 @@ namespace rasterize {
                 }
                 return false;
             };
-            auto not_in_shell = [](const auto &arr, const int x, const int y) {
-                if(x < 0) return false;
-                if(y < 0) return false;
-                assert(arr.size() <= std::numeric_limits<int>::max());
-                if(x >= (int)arr.size()-1) return false;
-                assert(arr[x].size() <= std::numeric_limits<int>::max());
-                if(y >= (int)arr[x].size()-1) return false;
-                return true;
+            auto not_in_shell = [](const auto &arr, const integral_t lx, const integral_t ly) {
+                if(lx < (integral_t)arr.size()) {
+                    return true;
+                }
+                if(ly < (integral_t)arr[lx].size()) {
+                    return true;
+                }
+                return false;
             };
 
             // is shell?
-            for(int dist : yz[y][z]) {
-                dist = constrain(0, _dim.x-1, dist);
+            for(const auto &dist : yz[y][z]) {
                 if(dist == x) return voxel_type::shell;
             }
-            for(int dist : xz[x][z]) {
-                dist = constrain(0, _dim.y-1, dist);
+            for(const auto &dist : xz[x][z]) {
                 if(dist == y) return voxel_type::shell;
             }
-            for(int dist : xy[x][y]) {
-                dist = constrain(0, _dim.z-1, dist);
+            for(const auto &dist : xy[x][y]) {
                 if(dist == z) return voxel_type::shell;
             }
 
             // is interior?
-            int cnt = 0;
-            if(not_in_shell(yz, y, z))
-                if(is_in(yz[y][z], x)) cnt++;
-
-            if(not_in_shell(xz, x, z))
-                if(is_in(xz[x][z], y)) cnt++;
-
-            if(not_in_shell(xy, x, y))
-                if(is_in(xy[x][y], z)) cnt++;
-
-            if(cnt >= 2)
-                return voxel_type::interior;
-            else 
-                return voxel_type::background;
+            size_t cnt = 0;
+            if(not_in_shell(yz, y, z) && is_in(yz[y][z], x)) cnt++;
+            if(not_in_shell(xz, x, z) && is_in(xz[x][z], y)) cnt++;
+            if(not_in_shell(xy, x, y) && is_in(xy[x][y], z)) cnt++;
+            return cnt >= 2 ? voxel_type::interior : voxel_type::background;
         }
         
-        proxy_i operator[] (const int x) const {
+        proxy_i operator[] (const integral_t x) const {
             return proxy_i(this, x);
         }
     };
@@ -131,7 +121,7 @@ namespace rasterize {
     template<typename base_t = float>
     class solid_safe {
         using id_t = typename mesh::polyhedron<base_t>::index_t;
-        using inters_t = intersections<int>;
+        using inters_t = intersections<uint32_t>;
         
         mesh::polyhedron<base_t> _polyhedron;
         glm::vec<3, base_t> _polyhedron_dim;
