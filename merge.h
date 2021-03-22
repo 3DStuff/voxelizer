@@ -291,7 +291,7 @@ namespace voxelize {
         }
 
         bool run_fast_raw(const cfg::merge_target &target) {
-            if(_raw.size() < 2) return false;
+            if(_raw.size() < 1) return false;
             if(_num_threads < 1) return false;
             benchmark::timer t("run_fast_raw::run() - merge took");
 
@@ -338,7 +338,7 @@ paral_crit
 
         bool run_fast_rle(const cfg::merge_target &target) {
             if(target._type != "fast") return false;
-            if(_rle.size() < 2) return false;
+            if(_rle.size() < 1) return false;
             if(_num_threads < 1) return false;
             benchmark::timer t("run_fast_rle::run() - merge took");
 
@@ -381,7 +381,7 @@ paral_crit
 
         bool run_efficient_rle(const cfg::merge_target &target) const {
             if(target._type != "efficient") return false;
-            if(_rle.size() < 2) return false;
+            if(_rle.size() < 1) return false;
             benchmark::timer t("run_efficient_rle::run() - merge took");
 
             compress::rle<uint8_t> rle_out;
