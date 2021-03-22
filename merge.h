@@ -17,6 +17,11 @@
 #include "rle/rle_io.h"
 #include "timer.h"
 
+#ifdef __GNUC__
+    #include "merge_out_gnu.h"
+#elif defined(_MSC_VER)
+    #include "merge_out_msv.h"
+#endif
 
 struct file_header {
     glm::ivec3 glo_dim;
@@ -46,7 +51,7 @@ struct file_header {
 };
 
 struct raw_file {
-    std::string             raw_file = "";
+    std::string             raw_path;
     file_header             raw_info;
 };
 
@@ -285,42 +290,19 @@ namespace voxelize {
             return false;
         }
 
-#define paral_prog_decl\
-    int perc = 0;\
-    size_t prog = 0;\
-    benchmark::timer ms("time");\
-    _Pragma("omp parallel for")
-
-#define paral_prog_report(arr)\
-    const int cur_perc = (int)((float)(prog+1)/arr.size()*100);\
-    if(perc != cur_perc)\
-    {\
-        perc = cur_perc;\
-        _Pragma("omp critical")\
-        {\
-            std::cout << "progress: " << perc << "/" << 100 << " ";\
-            ms.reset();\
-        }\
-    }\
-    _Pragma("omp atomic")\
-    prog++;
-
-#define paral_crit\
-    _Pragma("omp critical")
-
         bool run_fast_raw(const cfg::merge_target &target) {
             if(_raw.size() < 2) return false;
             if(_num_threads < 1) return false;
             benchmark::timer t("run_fast_raw::run() - merge took");
 
-            const auto &rle_info = _raw[0].raw_info;
-            std::vector<uint8_t> glo_buf((size_t)rle_info.glo_dim.x*rle_info.glo_dim.y*rle_info.glo_dim.z, 0);
+            const auto &raw_info = _raw[0].raw_info;
+            std::vector<uint8_t> glo_buf((size_t)raw_info.glo_dim.x*raw_info.glo_dim.y*raw_info.glo_dim.z, 0);
 
-paral_prog_decl
+paral_prog_decl // used for progress output in parallel region
             for(size_t i = 0; i < _raw.size(); i++) {
 paral_prog_report(_raw)
                 std::vector<uint8_t> loc_buf;
-                const std::string &f_path = _raw[i].raw_file;
+                const std::string &f_path = _raw[i].raw_path;
                 std::ifstream f_in = std::ifstream(f_path, std::ofstream::binary);
                 std::copy(std::istreambuf_iterator<char>(f_in), std::istreambuf_iterator<char>(), std::back_inserter(loc_buf));
                 f_in.close();
@@ -342,15 +324,15 @@ paral_prog_report(_raw)
                     if(loc_buf[lid] == 0) continue;
 
                     const glm::ivec3 glo_pos = loc_pos + loc_ofs;
-                    const int64_t gid = flatten_3dindex(rle_info.glo_dim, glo_pos, order);
+                    const int64_t gid = flatten_3dindex(raw_info.glo_dim, glo_pos, order);
 paral_crit
                     glo_buf[gid] = smallest(target, glo_buf[gid], loc_buf[lid]);
                 }
             }
 
             std::cout << "save file" << std::endl;
-            save_rle_fast(target, rle_info, glo_buf);
-            save_raw_fast(target, rle_info, glo_buf);
+            save_rle_fast(target, raw_info, glo_buf);
+            save_raw_fast(target, raw_info, glo_buf);
             return true;
         }
 
@@ -363,7 +345,7 @@ paral_crit
             const auto &rle_info = _rle[0].rle_info;
             std::vector<uint8_t> glo_buf((size_t)rle_info.glo_dim.x*rle_info.glo_dim.y*rle_info.glo_dim.z, 0);
 
-paral_prog_decl
+paral_prog_decl // used for progress output in parallel region
             for(size_t i = 0; i < _rle.size(); i++) {
 paral_prog_report(_rle)
                 const auto &rle = _rle[i].rle_data;
@@ -397,20 +379,6 @@ paral_crit
             return true;
         }
 
-#define lin_prog_decl\
-    int prog = 0;\
-    int perc = 0;\
-    size_t num_voxels = (size_t)rle_info.glo_dim.x*rle_info.glo_dim.y*rle_info.glo_dim.z;\
-    benchmark::timer ms("time");\
-
-#define lin_prog_report\
-    const int cur_perc = (int)((float)prog++/num_voxels*100);\
-    if(perc != cur_perc) {\
-        perc = cur_perc;\
-        std::cout << "progress: " << perc << "/" << 100 << " ";\
-        ms.reset();\
-    }
-
         bool run_efficient_rle(const cfg::merge_target &target) const {
             if(target._type != "efficient") return false;
             if(_rle.size() < 2) return false;
@@ -419,14 +387,14 @@ paral_crit
             compress::rle<uint8_t> rle_out;
             const auto &rle_info = _rle[0].rle_info;
 
-lin_prog_decl
+lin_prog_decl // used for not so important progress output which can be easily commented
             for(int z = 0; z < rle_info.glo_dim.z; z++)
             for(int y = 0; y < rle_info.glo_dim.y; y++)
             for(int x = 0; x < rle_info.glo_dim.x; x++) {
 lin_prog_report
                 const glm::ivec3 glo_pos = {x,y,z};
-                
                 uint8_t winner_mat = 0;
+
 #pragma omp parallel for reduction (max: winner_mat)
                 for(size_t i = 0; i < _rle.size(); i++) {
                     const auto &rle = _rle[i].rle_data;

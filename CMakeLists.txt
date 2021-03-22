@@ -61,6 +61,7 @@ set(voxel_lib
     rasterizer_safe.h
     raster_results.h
     index_buffer.h
+    flatten_index.h
     buffer.h
     timer.h
     rules.h
@@ -68,6 +69,8 @@ set(voxel_lib
     xml_config.h
     vox_file.h
     merge.h
+    merge_out_gnu.h
+    merge_out_msv.h
     main.cpp
 )
 
