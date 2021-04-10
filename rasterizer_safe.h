@@ -103,11 +103,10 @@ namespace rasterize {
             }
 
             // is interior?
-            size_t cnt = 0;
-            if(not_in_shell(yz, y, z) && is_in(yz[y][z], x)) cnt++;
-            if(not_in_shell(xz, x, z) && is_in(xz[x][z], y)) cnt++;
-            if(not_in_shell(xy, x, y) && is_in(xy[x][y], z)) cnt++;
-            return cnt >= 2 ? voxel_type::interior : voxel_type::background;
+            if(not_in_shell(yz, y, z) && !is_in(yz[y][z], x)) return voxel_type::background;
+            if(not_in_shell(xz, x, z) && !is_in(xz[x][z], y)) return voxel_type::background;
+            if(not_in_shell(xy, x, y) && !is_in(xy[x][y], z)) return voxel_type::background;
+            return voxel_type::interior;
         }
         
         proxy_i operator[] (const integral_t x) const {
@@ -132,7 +131,8 @@ namespace rasterize {
         
         // scale factors for quad trees
         glm::vec<3, base_t> _tree_search_steps = glm::vec<3, base_t>(1);
-        float _tree_scale = 1;
+        const float _tree_scale = 2.f;
+        const size_t _branch_size = 128;
         
     public:
         using voxel_data_t = raster_results<inters_t, mesh::polyhedron<base_t>>;
@@ -143,77 +143,41 @@ namespace rasterize {
             _polyhedron = mesh::polyhedron<base_t>::normalized(poly);
             _polyhedron = mesh::polyhedron<base_t>::scaled(_polyhedron, scale);
             
-            // use _polyhedron_dim to allocate the intersection arrays
-            // add one to the dimension:
-            // if a face is exactly on the end of the array, we cannot draw a voxel anymore
-            _polyhedron_dim = glm::ceil(_polyhedron.dim());
+            // if a face is exactly on the end of the array, we cannot draw a voxel anymore: add one to dim
+            _polyhedron_dim = glm::ceil(_polyhedron.dim()) + 1.f;
             const glm::vec<3, base_t> dim_half = _polyhedron_dim / 2.f;
 
-            _xy_tree = tree<quad::boundary, mesh::face<id_t>>(quad::boundary(dim_half.xy()*_tree_scale, dim_half.xy()*_tree_scale), 16);
-            _yz_tree = tree<quad::boundary, mesh::face<id_t>>(quad::boundary(dim_half.yz()*_tree_scale, dim_half.yz()*_tree_scale), 16);
-            _xz_tree = tree<quad::boundary, mesh::face<id_t>>(quad::boundary(dim_half.xz()*_tree_scale, dim_half.xz()*_tree_scale), 16);
+            _xy_tree = tree<quad::boundary, mesh::face<id_t>>(quad::boundary(dim_half.xy()*_tree_scale, dim_half.xy()*_tree_scale), _branch_size);
+            _yz_tree = tree<quad::boundary, mesh::face<id_t>>(quad::boundary(dim_half.yz()*_tree_scale, dim_half.yz()*_tree_scale), _branch_size);
+            _xz_tree = tree<quad::boundary, mesh::face<id_t>>(quad::boundary(dim_half.xz()*_tree_scale, dim_half.xz()*_tree_scale), _branch_size);
 
-            // build quad trees
-#pragma omp parallel sections
+            for (const auto &f : _polyhedron._indices._buffer) {
+                const glm::vec<3, base_t> v1 = _polyhedron._vertices[f[0]] * _tree_scale;
+                const glm::vec<3, base_t> v2 = _polyhedron._vertices[f[1]] * _tree_scale;
+                const glm::vec<3, base_t> v3 = _polyhedron._vertices[f[2]] * _tree_scale;
+                
+                const glm::ivec3 min = glm::floor(glm::min(v1, glm::min(v2, v3)));
+                const glm::ivec3 max = glm::ceil(glm::max(v1, glm::max(v2, v3)));
+#pragma omp parallel sections 
 {
 #pragma omp section
-{
-            for (const auto &f : _polyhedron._indices._buffer) {
-                const glm::vec<3, base_t> v1 = _polyhedron._vertices[f[0]] * _tree_scale;
-                const glm::vec<3, base_t> v2 = _polyhedron._vertices[f[1]] * _tree_scale;
-                const glm::vec<3, base_t> v3 = _polyhedron._vertices[f[2]] * _tree_scale;
-                
-                glm::ivec3 min = glm::floor(glm::min(v1, glm::min(v2, v3)));
-                glm::ivec3 max = glm::ceil(glm::max(v1, glm::max(v2, v3)));
-                
-                for(int x = min.x; x < max.x; x++)
-                for(int y = min.y; y < max.y; y++) {
-                    const bool is_in = checks::raycast::pt_in_triangle(glm::vec2(x,y), v1.xyz(), v2.xyz(), v3.xyz());
-                    if(is_in) {
-                        _xy_tree.insert(glm::vec2(x,y), f);
-                    }
+                for(int x = min.x; x <= max.x; x++)
+                for(int y = min.y; y <= max.y; y++) {
+                    _xy_tree.insert({x,y}, f);
                 }
-            }
-}
 #pragma omp section
-{
-            for (const auto &f : _polyhedron._indices._buffer) {
-                const glm::vec<3, base_t> v1 = _polyhedron._vertices[f[0]] * _tree_scale;
-                const glm::vec<3, base_t> v2 = _polyhedron._vertices[f[1]] * _tree_scale;
-                const glm::vec<3, base_t> v3 = _polyhedron._vertices[f[2]] * _tree_scale;
-                
-                glm::ivec3 min = glm::floor(glm::min(v1, glm::min(v2, v3)));
-                glm::ivec3 max = glm::ceil(glm::max(v1, glm::max(v2, v3)));
-                
-                for(int y = min.y; y < max.y; y++)
-                for(int z = min.z; z < max.z; z++) {
-                    const bool is_in = checks::raycast::pt_in_triangle(glm::vec2(y,z), v1.yzx(), v2.yzx(), v3.yzx());
-                    if(is_in) {
-                        _yz_tree.insert(glm::vec2(y,z), f);
-                    }
+                for(int x = min.x; x <= max.x; x++)
+                for(int z = min.z; z <= max.z; z++) {
+                    _xz_tree.insert({x,z}, f);
                 }
-            }
-}
-#pragma omp section 
-{
-            for (const auto &f : _polyhedron._indices._buffer) {
-                const glm::vec<3, base_t> v1 = _polyhedron._vertices[f[0]] * _tree_scale;
-                const glm::vec<3, base_t> v2 = _polyhedron._vertices[f[1]] * _tree_scale;
-                const glm::vec<3, base_t> v3 = _polyhedron._vertices[f[2]] * _tree_scale;
-                
-                glm::ivec3 min = glm::floor(glm::min(v1, glm::min(v2, v3)));
-                glm::ivec3 max = glm::ceil(glm::max(v1, glm::max(v2, v3)));
-                
-                for(int x = min.x; x < max.x; x++)
-                for(int z = min.z; z < max.z; z++) {
-                    const bool is_in = checks::raycast::pt_in_triangle(glm::vec2(x,z), v1.xzy(), v2.xzy(), v3.xzy());
-                    if(is_in) {
-                        _xz_tree.insert(glm::vec2(x,z), f);
-                    }
+#pragma omp section
+                for(int y = min.y; y <= max.y; y++)
+                for(int z = min.z; z <= max.z; z++) {
+                    _yz_tree.insert({y,z}, f);
                 }
+}
             }
-}
-}
+
 #ifdef DEBUG
             draw_quad_tree(_xy_tree);
             draw_quad_tree(_yz_tree);
@@ -223,15 +187,10 @@ namespace rasterize {
         
         voxel_data_t rasterize() const {
             // create timer object
-            benchmark::timer tmp("rasterize()");
-            
-            // the quad tree is scaled up or down to 128 x Y x Z voxels
-            // thus, we calc the scale factors to access the tree            
+            benchmark::timer tmp("rasterize()");       
             inters_t r(_polyhedron_dim);
-            
 #pragma omp parallel
 {
-
 #pragma omp for nowait
             for(int y = 0; y < (int)_polyhedron_dim.y; y++)
             for(int z = 0; z < (int)_polyhedron_dim.z; z++) {

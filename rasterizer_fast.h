@@ -10,6 +10,7 @@
 #include "timer.h"
 
 #include <set>
+#include <unordered_set>
 #include <omp.h>
 
 
@@ -20,7 +21,7 @@ namespace rasterize {
     template<typename base_t = float>
     class solid_fast {
         using id_t = typename mesh::polyhedron<base_t>::index_t;
-        
+
         mesh::polyhedron<base_t> _polyhedron;
         glm::ivec3 _dim;
         
@@ -28,85 +29,105 @@ namespace rasterize {
         buffer3d<mesh::face<id_t>> _yz_plane_buffer;
         buffer3d<mesh::face<id_t>> _xz_plane_buffer;
         
+        size_t seed_size = 128;
+        glm::ivec3 _seed = {0, 0, 0};
+
+        // casts rays along a world coordinate plane: xy, yz, xz
+        // faster then checking every cell, but causing issues with infill
+        template <swizzle_mode mode> void planar_raycast(auto &buf) {
+            benchmark::timer tmp("planar_raycast()");
+
+            glm::ivec2 dim;
+            if constexpr(mode == yzx)
+                dim = {_dim.y,_dim.z};
+            if constexpr(mode == xzy)
+                dim = {_dim.x,_dim.z};
+            if constexpr(mode == xyz)
+                dim = {_dim.x,_dim.y};
+
+#pragma omp parallel for
+            for(int i = 0; i < dim.x; i++)
+            for(int j = 0; j < dim.y; j++) {
+                std::set<int> inters;
+                if constexpr(mode == yzx)
+                    inters = checks::raycast::get_intersections_fast<mode>(glm::vec2(i,j), _polyhedron._vertices, _yz_plane_buffer[i][j]);
+                if constexpr(mode == xzy)
+                    inters = checks::raycast::get_intersections_fast<mode>(glm::vec2(i,j), _polyhedron._vertices, _xz_plane_buffer[i][j]);
+                if constexpr(mode == xyz)
+                    inters = checks::raycast::get_intersections_fast<mode>(glm::vec2(i,j), _polyhedron._vertices, _xy_plane_buffer[i][j]);
+
+                bool is_in = false;
+                int from = -1;
+                for(int inters : inters) {
+                    // 1) assign shell voxels
+                    if constexpr(mode == yzx) {
+                        inters = constrain(0, _dim.x-1, inters);
+                        buf._voxels[inters][i][j] = voxel_type::shell;
+                    }
+                    if constexpr(mode == xzy) {
+                        inters = constrain(0, _dim.y-1, inters);
+                        buf._voxels[i][inters][j] = voxel_type::shell;
+                    }
+                    if constexpr(mode == xyz) {
+                        inters = constrain(0, _dim.z-1, inters);
+                        buf._voxels[i][j][inters] = voxel_type::shell;
+                    }
+
+                    // 2) assign interior voxels by bit shift 
+                    // here we run from shell voxel to shell voxel
+                    // after three bit shifts the voxel is equal to voxel_type::interior
+                    if(from > -1) {
+                        for(int k = from; k < inters; k++) {
+                            if(!is_in) continue;
+                            if constexpr(mode == yzx) {
+                                uint8_t &vox = buf._voxels[k][i][j];
+                                if(vox == voxel_type::shell) continue;
+                                vox = (vox != 0) ? vox << 1 : 1;
+                            }
+                            else if constexpr(mode == xzy) {
+                                uint8_t &vox = buf._voxels[i][k][j];
+                                if(vox == voxel_type::shell) continue;
+                                vox = (vox != 0) ? vox << 1 : 1;
+                            }
+                            else if constexpr(mode == xyz) {
+                                uint8_t &vox = buf._voxels[i][j][k];
+                                if(vox == voxel_type::shell) continue;
+                                vox = (vox != 0) ? vox << 1 : 1;
+                            }
+
+                            // save some voxel positions as seeds and try to space them a bit
+                            bool seed_valid = buf._voxels[_seed.x][_seed.y][_seed.z] == voxel_type::interior;
+                            if(!seed_valid) {
+                                glm::ivec3 pos;
+                                if constexpr(mode == yzx) pos = {k,i,j};
+                                if constexpr(mode == xzy) pos = {i,k,j};
+                                if constexpr(mode == xyz) pos = {i,j,k};
+                                _seed = pos;
+                            }
+                        }
+                    }
+                    from = inters+1;
+                    is_in = !is_in;
+                }
+            }
+        }
+
     public:
         using voxel_data_t = raster_results<buffer3d<uint8_t>, mesh::polyhedron<base_t>>;
-        
+
         solid_fast(const mesh::polyhedron<base_t> &poly, glm::ivec3 dim) {
             double min_face_area = poly.avg_face_area() / 10;
             _polyhedron = prepare_index_buffers(poly, dim, _xy_plane_buffer, _yz_plane_buffer, _xz_plane_buffer, min_face_area);
             _dim = glm::ceil(_polyhedron.dim());
         }
-        
-        voxel_data_t rasterize() const {
-            raster_results res(_dim, buffer3d<uint8_t>(_dim.x, _dim.y, _dim.z, 0), _polyhedron);
-        
-            // create timer object
+
+        voxel_data_t rasterize() {
             benchmark::timer tmp("rasterize()");
-            
-#pragma omp parallel for
-            for(int y = 0; y < _dim.y; y++)
-            for(int z = 0; z < _dim.z; z++) {
-                std::set<int> inters = checks::raycast::get_intersections_fast<yzx>(glm::vec2(y,z), _polyhedron._vertices, _yz_plane_buffer[y][z]);
-                bool is_in = false;
-                int from = -1;
-                
-                for(int inters : inters) {
-                    inters = constrain(0, _dim.x-1, inters);
-                    res._voxels[inters][y][z] = voxel_type::shell;
-                    
-                    if(from > -1)
-                        for(int i = from; i < inters; i++) {
-                            if(res._voxels[i][y][z] == voxel_type::shell) continue;
-                            res._voxels[i][y][z] = is_in; // initially set voxel to 1
-                        }
-                    
-                    from = inters+1;
-                    is_in = !is_in;
-                }
-            }
-#pragma omp parallel for
-            for(int x = 0; x < _dim.x; x++)
-            for(int z = 0; z < _dim.z; z++) {
-                std::set<int> inters = checks::raycast::get_intersections_fast<xzy>(glm::vec2(x,z), _polyhedron._vertices, _xz_plane_buffer[x][z]);
-                bool is_in = false;
-                int from = -1;
-                
-                for(int inters : inters) {
-                    inters = constrain(0, _dim.y-1, inters);
-                    res._voxels[x][inters][z] = voxel_type::shell;
-                    
-                    if(from > -1)
-                        for(int i = from; i < inters; i++) {
-                            if(res._voxels[x][i][z] == voxel_type::shell) continue;
-                            res._voxels[x][i][z] <<= is_in; // first bit shift; now the value should be either 0 or voxel_type::interior
-                        }
-                    
-                    from = inters+1;
-                    is_in = !is_in;
-                }
-            }
-#pragma omp parallel for
-            for(int x = 0; x < _dim.x; x++)
-            for(int y = 0; y < _dim.y; y++) {
-                std::set<int> inters = checks::raycast::get_intersections_fast<xyz>(glm::vec2(x,y), _polyhedron._vertices, _xy_plane_buffer[x][y]);
-                bool is_in = false;
-                int from = -1;
-                
-                for(int inters : inters) {
-                    inters = constrain(0, _dim.z-1, inters);
-                    res._voxels[x][y][inters] = voxel_type::shell;
-                    
-                    if(from > -1)
-                        for(int i = from; i < inters; i++) {
-                            if(res._voxels[x][y][i] == voxel_type::shell) continue;
-                            res._voxels[x][y][i] <<= is_in; // second bit shift; now the value should be either 0 or voxel_type::interior
-                        }
-                    
-                    from = inters+1;
-                    is_in = !is_in;
-                }
-            }
-            return res;
+            voxel_data_t buf(_dim, buffer3d<uint8_t>(_dim.x, _dim.y, _dim.z, 0), _polyhedron);
+            planar_raycast<yzx>(buf);
+            planar_raycast<xzy>(buf);
+            planar_raycast<xyz>(buf);
+            return buf;
         }
     };
 };

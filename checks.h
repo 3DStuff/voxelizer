@@ -7,51 +7,40 @@
 
 
 namespace hidden {
-    constexpr float precision_bias = FLT_EPSILON;
+    constexpr float precision_bias = FLT_EPSILON*10;
     
-    template<typename base_t> constexpr glm::vec<3, base_t> 
-    swizzle_vector_3d(
-        const glm::vec<3, base_t> &v, 
-        const swizzle_mode mode
-    ) 
+    template<swizzle_mode mode, typename base_t> 
+    constexpr glm::vec<3, base_t> swizzle_vector_3d(const glm::vec<3, base_t> &v) 
     {
-        switch(mode) {
-            case xzy:
-                return v.xzy();
-            case yxz:
-                return v.yxz();
-            case yzx:
-                return v.yzx();
-            case zxy:
-                return v.zxy();
-            case zyx:
-                return v.zyx();
-            default:
-                return v;
-                
-        };
+        if constexpr (mode == xzy)
+            return v.xzy();
+        else if constexpr (mode == yxz)
+            return v.yxz();
+        else if constexpr (mode == yzx)
+            return v.yzx();
+        else if constexpr (mode == zxy)
+            return v.zxy();
+        else if constexpr (mode == zyx)
+            return v.zyx();
+        else
+            return v;
     } 
     
-    template<typename base_t> constexpr glm::vec<2, base_t> 
-    swizzle_vector_2d(
-        const glm::vec<3, base_t> &v, 
-        const swizzle_mode mode
-    ) 
+    template<swizzle_mode mode, typename base_t> 
+    constexpr glm::vec<2, base_t> swizzle_vector_2d(const glm::vec<3, base_t> &v) 
     {
-        switch(mode) {
-            case xzy:
-                return v.xz();
-            case yxz:
-                return v.yx();
-            case yzx:
-                return v.yz();
-            case zxy:
-                return v.zx();
-            case zyx:
-                return v.zy();
-            default:
-                return v;
-        };
+        if constexpr (mode == xzy)
+            return v.xz();
+        else if constexpr (mode == yxz)
+            return v.yx();
+        else if constexpr (mode == yzx)
+            return v.yz();
+        else if constexpr (mode == zxy)
+            return v.zx();
+        else if constexpr (mode == zyx)
+            return v.zy();
+        else
+            return v;
     } 
     
     struct plane {
@@ -157,39 +146,38 @@ namespace checks {
             const ind_buf_t &face_indices
         )
         {
+            auto check_faces_for_collision = [&](const glm::vec<2, base_t> &p) {
+                for(const auto &f : face_indices) {
+                    const glm::vec<2, base_t> swizzle_v1 = hidden::swizzle_vector_2d<mode>(vert_buffer[f[0]]);
+                    const glm::vec<2, base_t> swizzle_v2 = hidden::swizzle_vector_2d<mode>(vert_buffer[f[1]]);
+                    const glm::vec<2, base_t> swizzle_v3 = hidden::swizzle_vector_2d<mode>(vert_buffer[f[2]]);
+                    
+                    float proximity; 
+                    if(distance_to_edge(p, swizzle_v1, swizzle_v2, hidden::precision_bias, proximity)) { return true; }
+                    if(distance_to_edge(p, swizzle_v1, swizzle_v3, hidden::precision_bias, proximity)) { return true; }
+                    if(distance_to_edge(p, swizzle_v2, swizzle_v3, hidden::precision_bias, proximity)) { return true; }
+                }
+                return false;
+            };
+
             // issue: edge collision
             // in case of an edge collision, we move the position a bit
             constexpr int max_iter = 1000;
-            glm::vec<2, base_t> p2d;
-                        
+            glm::vec<2, base_t> p2d = pos;
             // try to find a good position
             for(int i = 0; i <= max_iter; i++) {
-                bool collision = false;
-                glm::vec<2, base_t> tmp = pos;
-                for(const auto &f : face_indices) {
-                    tmp[hidden::prand<int>(0,1)] += hidden::prand<float>(1, max_iter) / max_iter * i / (max_iter+1);
- 
-                    const glm::vec<2, base_t> swizzle_v1 = hidden::swizzle_vector_2d(vert_buffer[f[0]], mode);
-                    const glm::vec<2, base_t> swizzle_v2 = hidden::swizzle_vector_2d(vert_buffer[f[1]], mode);
-                    const glm::vec<2, base_t> swizzle_v3 = hidden::swizzle_vector_2d(vert_buffer[f[2]], mode);
-                    
-                    float proximity; 
-                    if(distance_to_edge(tmp, swizzle_v1, swizzle_v2, hidden::precision_bias, proximity)) { collision = true; break; }
-                    if(distance_to_edge(tmp, swizzle_v1, swizzle_v3, hidden::precision_bias, proximity)) { collision = true; break; }
-                    if(distance_to_edge(tmp, swizzle_v2, swizzle_v3, hidden::precision_bias, proximity)) { collision = true; break; }
-                    if(glm::length(tmp - swizzle_v1) < hidden::precision_bias) { collision = true; break; }
-                    if(glm::length(tmp - swizzle_v2) < hidden::precision_bias) { collision = true; break; }
-                    if(glm::length(tmp - swizzle_v3) < hidden::precision_bias) { collision = true; break; }
-                }
-                // success because there was no collision
-                if(!collision) {
-                    p2d = tmp;
-                    break;
-                }
                 // fail, there was a collision and we don't want to test forever
                 if(i == max_iter) {
                     return {};
                 }
+
+                // success because there was no collision
+                if(!check_faces_for_collision(p2d)) {
+                    break;
+                }
+
+                p2d = pos;
+                p2d[hidden::prand<int>(0,1)] += hidden::prand<float>(1, max_iter) / max_iter * i / (max_iter+1);
             }
 
             //! do a 2d ray intersection test
@@ -199,37 +187,28 @@ namespace checks {
                 // models are scales to 0 <= x <= MAX, 
                 // so starting from zero is a bad idea
                 float ray_start = -1;
-                
-                // zwizzle the position and check
                 glm::vec<3, base_t> pos_3d;
                 if constexpr (mode == swizzle_mode::yzx) {
                     dir = glm::vec<3, base_t>(1,0,0);
                     pos_3d = glm::vec<3, base_t>(ray_start, p2d.x, p2d.y);
                 }
-                else if(mode == swizzle_mode::xzy) {
+                else if constexpr(mode == swizzle_mode::xzy) {
                     dir = glm::vec<3, base_t>(0,1,0);
                     pos_3d = glm::vec<3, base_t>(p2d.x, ray_start, p2d.y);
                 }
-                else if(mode == swizzle_mode::xyz){
+                else if constexpr(mode == swizzle_mode::xyz){
                     dir = glm::vec<3, base_t>(0,0,1);
                     pos_3d = glm::vec<3, base_t>(p2d.x, p2d.y, ray_start);
                 }
 
-                glm::vec2 bary_pos(0); float distance = 0;
+                glm::vec2 bary_pos; 
+                float distance = 0;
                 const bool is_inters = glm::intersectRayTriangle(
-                    pos_3d,
-                    dir,
-                    vert_buffer[f[0]],
-                    vert_buffer[f[1]],
-                    vert_buffer[f[2]],
-                    bary_pos,
-                    distance
+                    pos_3d, dir,
+                    vert_buffer[f[0]], vert_buffer[f[1]], vert_buffer[f[2]],
+                    bary_pos, distance
                 );                
-                // glm 9.9: 
-                // the intersectRayTriangle behaves like a line intersection,
-                // always returning two opposing intersecting faces
-                const bool positive = distance > 0 ? true : false;
-                if(is_inters && positive) {
+                if(is_inters && distance > 0) {
                     inters_dist.insert(glm::round(distance + ray_start));
                 }
             }
@@ -246,9 +225,9 @@ namespace checks {
         {
             std::set<int> inters_dist;
             for(const auto &f : face_indices) {
-                const glm::vec<3, base_t> &v1 = hidden::swizzle_vector_3d(vert_buffer[f[0]], mode);
-                const glm::vec<3, base_t> &v2 = hidden::swizzle_vector_3d(vert_buffer[f[1]], mode);
-                const glm::vec<3, base_t> &v3 = hidden::swizzle_vector_3d(vert_buffer[f[2]], mode);
+                const glm::vec<3, base_t> &v1 = hidden::swizzle_vector_3d<mode>(vert_buffer[f[0]]);
+                const glm::vec<3, base_t> &v2 = hidden::swizzle_vector_3d<mode>(vert_buffer[f[1]]);
+                const glm::vec<3, base_t> &v3 = hidden::swizzle_vector_3d<mode>(vert_buffer[f[2]]);
 
                 int d = 0;
                 if(pt_in_triangle(pos, v1, v2, v3, d)) {

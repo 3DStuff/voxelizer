@@ -27,7 +27,7 @@
     int prog = 0;\
     int perc = 0;\
     size_t num_voxels = (size_t)rle_info.glo_dim.x*rle_info.glo_dim.y*rle_info.glo_dim.z;\
-    benchmark::timer ms("time");\
+    benchmark::timer ms("time");
 
 #define lin_prog_report\
     const int cur_perc = (int)((float)prog++/num_voxels*100);\
